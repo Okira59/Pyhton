@@ -63,3 +63,10 @@ python dip_tavan.py            # son durum
 python dip_tavan.py --history  # son 60 günün sinyalleri + kâr/zarar özeti
 ```
 GitHub Actions: `.github/workflows/dip_tavan.yml`, secret `TELEGRAM_BOT_TOKEN_15` (chat ID: `TELEGRAM_CHAT_ID_15`, yoksa `TELEGRAM_CHAT_ID`).
+
+## Web paneli
+
+İki botun durumu (fiyat grafiği, gösterge tabloları, açık işlem, son 60 günün sinyalleri ve kâr/zarar yüzdeleri)
+`docs/index.html` sayfasında gösterilir: https://okira59.github.io/Pyhton/
+
+Botlar her çalışmada `docs/data/sinyal.json` ve `docs/data/dip_tavan.json` dosyalarını günceller; sayfa her dakika yenilenir.

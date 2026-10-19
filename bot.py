@@ -13,6 +13,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 
+import dashboard
 from indicators import bollinger, ema, macd, stoch_rsi
 
 # ---------------------------------------------------------------- AYARLAR ---
@@ -197,7 +198,7 @@ def _close_text(pos: dict, row: pd.Series) -> str:
 def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
     """Mumları kronolojik işler: kâr al (KAPAT) ve yeni AL/SAT olayları üretir.
 
-    state["position"] açık işlemi tutar. Dönen liste: (zaman, tür, mesaj).
+    state["position"] açık işlemi tutar. Dönen liste: (zaman, tür, mesaj, bilgi).
     """
     events = []
     rows = data if since is None else data[data["close_time"] > since]
@@ -206,10 +207,14 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
         if pos and row["close_time"] > pd.Timestamp(pos["time"]):
             hit = (row["High"] >= pos["target"]) if pos["dir"] == 1 else (row["Low"] <= pos["target"])
             if hit:
-                events.append((row["close_time"], "KAPAT", _close_text(pos, row)))
+                pct = TP_PIPS * PIP_SIZE / pos["entry"] * 100
+                events.append((row["close_time"], "KAPAT", _close_text(pos, row),
+                               {"dir": pos["dir"], "entry": round(pos["entry"], 2),
+                                "exit": round(pos["target"], 2), "pct": round(pct, 3)}))
                 state["position"] = None
         if row["new_signal"] != 0:
-            events.append((row["close_time"], "SINYAL", _open_text(row)))
+            events.append((row["close_time"], "SINYAL", _open_text(row),
+                           {"dir": int(row["new_signal"]), "price": round(float(row["Close"]), 2)}))
             state["position"] = {
                 "dir": int(row["new_signal"]),
                 "entry": float(row["Close"]),
@@ -236,7 +241,7 @@ def check_and_notify(require_telegram: bool = True):
         state["last_processed"] = data["close_time"].iloc[-1].isoformat()
     else:
         now = pd.Timestamp.now(tz="UTC")
-        for t, kind, text in process_events(data, state, since=pd.Timestamp(last)):
+        for t, kind, text, _ in process_events(data, state, since=pd.Timestamp(last)):
             if now - t <= MAX_SIGNAL_AGE:
                 send_telegram(text)
                 print(f"Gönderildi ({kind}):\n{text}\n")
@@ -248,15 +253,38 @@ def check_and_notify(require_telegram: bool = True):
     state["heartbeat"] = datetime.now(timezone.utc).strftime("%Y-%m")
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+    try:
+        export_dashboard(data, state)
+    except Exception as e:  # panel hatası bildirimleri engellemesin
+        print(f"Panel verisi yazılamadı: {e}")
+
+
+def export_dashboard(data: pd.DataFrame, state: dict):
+    last = data.iloc[-1]
+    history = dashboard.events_to_list(process_events(data, {}))
+    dashboard.write("sinyal", {
+        "symbol": SYMBOL,
+        "close_time": dashboard.ts(last["close_time"]),
+        "price": round(float(last["Close"]), 2),
+        "indicators": {ind: {"15dk": int(last[ind]), "4s": int(last["h4_" + ind])}
+                       for ind in INDICATORS},
+        "signal": int(last["signal"]),
+        "tp_pips": TP_PIPS,
+        "pip_size": PIP_SIZE,
+        "position": state.get("position"),
+        "history": history,
+        "stats": dashboard.stats(history),
+        "candles": dashboard.candles(data, data.index),
+    })
 
 
 def show_history():
     data = combine(*fetch_data())
     events = process_events(data, {})
-    n_sig = sum(k == "SINYAL" for _, k, _ in events)
-    n_tp = sum(k == "KAPAT" for _, k, _ in events)
+    n_sig = sum(e[1] == "SINYAL" for e in events)
+    n_tp = sum(e[1] == "KAPAT" for e in events)
     print(f"Son {len(data)} adet 15dk mumda {n_sig} sinyal, {n_tp} kâr al (+{TP_PIPS:g} pip) bulundu:\n")
-    for t, kind, text in events:
+    for t, kind, _, _ in events:
         if kind == "SINYAL":
             row = data[data["close_time"] == t].iloc[0]
             print(f"{t:%Y-%m-%d %H:%M} UTC  {_arrow(row['new_signal'])}  @ {row['Close']:.2f}")

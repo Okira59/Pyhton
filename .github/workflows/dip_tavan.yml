@@ -35,10 +35,10 @@ jobs:
         run: python dip_tavan.py --notify ${{ inputs.test && '--test' || '' }}
       - name: Durumu kaydet
         run: |
-          if [ -n "$(git status --porcelain dip_tavan_state.json)" ]; then
+          if [ -n "$(git status --porcelain dip_tavan_state.json docs/data/dip_tavan.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898332+github-actions[bot]@users.noreply.github.com"
-            git add dip_tavan_state.json
+            git add dip_tavan_state.json docs/data/dip_tavan.json
             git commit -m "Dip-tavan durumu güncellendi [skip ci]"
             git pull --rebase
             git push

@@ -11,7 +11,8 @@ import os
 
 import pandas as pd
 
-from bot import TF_15M, _closed_only, _download, send_telegram
+import dashboard
+from bot import SYMBOL, TF_15M, _closed_only, _download, send_telegram
 from indicators import bollinger, ema, macd, rsi, stoch_rsi
 
 # ---------------------------------------------------------------- AYARLAR ---
@@ -132,7 +133,7 @@ def _close_text(pos: dict, row: pd.Series, exit_price: float, reason: str) -> st
 
 
 def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
-    """Mumları sırayla işler; (zaman, tür, mesaj, kâr%) listesi döner."""
+    """Mumları sırayla işler; (zaman, tür, mesaj, bilgi) listesi döner."""
     events = []
     rows = data if since is None else data[data["close_time"] > since]
     for _, row in rows.iterrows():
@@ -152,10 +153,13 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
                 exit_price, reason = float(row["Close"]), "ters yönde yeni sinyal"
             if exit_price is not None:
                 pct = pos["dir"] * (exit_price - pos["entry"]) / pos["entry"] * 100
-                events.append((row["close_time"], "KAPAT", _close_text(pos, row, exit_price, reason), pct))
+                events.append((row["close_time"], "KAPAT", _close_text(pos, row, exit_price, reason),
+                               {"dir": pos["dir"], "entry": round(pos["entry"], 2), "exit": round(exit_price, 2),
+                                "pct": round(pct, 3), "reason": reason}))
                 state["position"] = pos = None
         if sig != 0 and not (pos and pos["dir"] == sig):
-            events.append((row["close_time"], "SINYAL", _open_text(row, sig), None))
+            events.append((row["close_time"], "SINYAL", _open_text(row, sig),
+                           {"dir": sig, "price": round(float(row["Close"]), 2)}))
             state["position"] = {"dir": sig, "entry": float(row["Close"]),
                                  "time": row["close_time"].isoformat()}
     return events
@@ -187,13 +191,41 @@ def check_and_notify(send: bool = True):
     state["last_processed"] = last["close_time"].isoformat()
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+    try:
+        export_dashboard(data, state)
+    except Exception as e:  # panel hatası bildirimleri engellemesin
+        print(f"Panel verisi yazılamadı: {e}")
+
+
+def export_dashboard(data: pd.DataFrame, state: dict):
+    last = data.iloc[-1]
+    history = dashboard.events_to_list(process_events(data, {}))
+    dashboard.write("dip_tavan", {
+        "symbol": SYMBOL,
+        "close_time": dashboard.ts(last["close_time"]),
+        "price": round(float(last["Close"]), 2),
+        "scores": {n: {"dip": int(last[f"dip_{n}"]), "top": int(last[f"top_{n}"]),
+                       "dip_list": list(last[f"dip_list_{n}"]),
+                       "top_list": list(last[f"top_list_{n}"])}
+                   for n in TIMEFRAMES},
+        "min_score_15m": MIN_SCORE_15M,
+        "min_score_higher": MIN_SCORE_HIGHER,
+        "tp_pips": TP_PIPS,
+        "sl_pips": SL_PIPS,
+        "pip_size": PIP_SIZE,
+        "position": state.get("position"),
+        "history": history,
+        "stats": dashboard.stats(history),
+        "candles": dashboard.candles(data, data.index - TF_15M),
+    })
 
 
 def show_history():
     data = fetch()
     events = process_events(data, {})
-    closed = [p for _, k, _, p in events if k == "KAPAT"]
-    for t, kind, _, pct in events:
+    closed = [i["pct"] for _, k, _, i in events if k == "KAPAT"]
+    for t, kind, _, info in events:
+        pct = info.get("pct")
         if kind == "SINYAL":
             d = int(data.loc[t, "new_signal"])
             print(f"{t:%m-%d %H:%M}  {'🟢 AL ' if d == 1 else '🔴 SAT'} @ {data.loc[t, 'Close']:.2f}")
