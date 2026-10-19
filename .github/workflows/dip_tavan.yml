@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "2,17,32,47 * * * *"  # her 15dk mum kapanışından ~2 dk sonra (UTC)
   workflow_dispatch:
+    inputs:
+      test:
+        description: "Telegram'a deneme mesajı gönder"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,7 +32,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN_15 }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID_15 || secrets.TELEGRAM_CHAT_ID }}
-        run: python dip_tavan.py --notify
+        run: python dip_tavan.py --notify ${{ inputs.test && '--test' || '' }}
       - name: Durumu kaydet
         run: |
           if [ -n "$(git status --porcelain dip_tavan_state.json)" ]; then

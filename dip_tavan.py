@@ -208,8 +208,12 @@ def show_history():
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Altın dip/tavan sinyal botu")
     p.add_argument("--notify", action="store_true", help="Yeni olayları Telegram'a gönder")
+    p.add_argument("--test", action="store_true", help="Telegram'a deneme mesajı gönder")
     p.add_argument("--history", action="store_true", help="Son 60 günün sinyallerini ve sonuçlarını listele")
     args = p.parse_args()
+    if args.test:
+        send_telegram("✅ Dip-Tavan botu bağlandı. Bu bir deneme mesajıdır.\n"
+                      "🟢 = AL (dip)   🔴 = SAT (tavan)")
     if args.history:
         show_history()
     else:
