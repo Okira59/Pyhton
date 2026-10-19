@@ -139,8 +139,10 @@ def send_telegram(text: str):
     if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
         return
     try:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                      data={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10)
+        r = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                          data={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10)
+        if not r.ok:
+            print(f"Telegram hatası: {r.status_code} {r.json().get('description', '')}")
     except requests.RequestException as e:
         print(f"Telegram hatası: {e}")
 
