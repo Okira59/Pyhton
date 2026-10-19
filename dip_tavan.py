@@ -12,7 +12,7 @@ import os
 import pandas as pd
 
 import dashboard
-from bot import SYMBOL, TF_15M, _closed_only, _download, send_telegram
+from bot import SYMBOL, TF_15M, _closed_only, _download, position_line, send_telegram, status_due
 from indicators import bollinger, ema, macd, rsi, stoch_rsi
 
 # ---------------------------------------------------------------- AYARLAR ---
@@ -165,6 +165,18 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
     return events
 
 
+def _status_text(row: pd.Series, pos) -> str:
+    lines = ["🕐 SAATLİK DURUM – Dip/Tavan",
+             f"XAU/USD  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
+             f"Fiyat: {row['Close']:.2f}", "",
+             f"{'':<5} {'🟢 dip':<7} {'🔴 tavan':<8}"]
+    for n in TIMEFRAMES:
+        lines.append(f"{n:<5} {int(row[f'dip_{n}'])}/6     {int(row[f'top_{n}'])}/6")
+    lines += ["", f"Sinyal için 15dk'da en az {MIN_SCORE_15M}/6 gerekli.",
+              position_line(pos, float(row["Close"]))]
+    return "\n".join(lines)
+
+
 def _load_state() -> dict:
     try:
         with open(STATE_FILE) as f:
@@ -189,6 +201,8 @@ def check_and_notify(send: bool = True):
             if send and now - t <= MAX_EVENT_AGE:
                 send_telegram(text)
     state["last_processed"] = last["close_time"].isoformat()
+    if send and status_due(state, last["close_time"]):
+        send_telegram(_status_text(last, state.get("position")))
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
     try:

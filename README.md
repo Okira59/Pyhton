@@ -70,3 +70,8 @@ GitHub Actions: `.github/workflows/dip_tavan.yml`, secret `TELEGRAM_BOT_TOKEN_15
 `docs/index.html` sayfasında gösterilir: https://okira59.github.io/Pyhton/
 
 Botlar her çalışmada `docs/data/sinyal.json` ve `docs/data/dip_tavan.json` dosyalarını günceller; sayfa her dakika yenilenir.
+
+## Saatlik durum mesajı
+
+İki bot da her saatin ilk kontrolünde, sinyal olmasa bile Telegram'a 🕐 SAATLİK DURUM mesajı gönderir
+(fiyat, gösterge tablosu, açık işlemin anlık kâr/zarar yüzdesi). Piyasa kapalıyken gönderilmez.

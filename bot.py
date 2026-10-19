@@ -178,6 +178,27 @@ def _load_state() -> dict:
         return {}
 
 
+def status_due(state: dict, close_time: pd.Timestamp) -> bool:
+    """Saatlik durum mesajı zamanı geldi mi? (her saatin ilk kontrolü, piyasa açıkken)"""
+    hour = close_time.floor("h").isoformat()
+    if state.get("last_status") == hour:
+        return False
+    if pd.Timestamp.now(tz="UTC") - close_time > pd.Timedelta(minutes=45):
+        return False  # veri eski: piyasa kapalı
+    state["last_status"] = hour
+    return True
+
+
+def position_line(pos, price: float) -> str:
+    if not pos:
+        return "Açık işlem: yok"
+    pct = pos["dir"] * (price - pos["entry"]) / pos["entry"] * 100
+    pips = pos["dir"] * (price - pos["entry"]) / PIP_SIZE
+    side = "🟢 AL" if pos["dir"] == 1 else "🔴 SAT"
+    return (f"Açık işlem: {side} @ {pos['entry']:.2f}\n"
+            f"Anlık {'kâr' if pct >= 0 else 'zarar'}: {pct:+.2f}%  ({pips:+.1f} pip)")
+
+
 def _target(direction: int, entry: float) -> float:
     return entry + direction * TP_PIPS * PIP_SIZE
 
@@ -247,6 +268,11 @@ def check_and_notify(require_telegram: bool = True):
                 print(f"Gönderildi ({kind}):\n{text}\n")
         state["last_processed"] = data["close_time"].iloc[-1].isoformat()
     state.pop("last_signal_time", None)
+
+    last_row = data.iloc[-1]
+    if status_due(state, last_row["close_time"]):
+        send_telegram(f"🕐 SAATLİK DURUM\n{format_report(last_row)}\n"
+                      f"{position_line(state.get('position'), float(last_row['Close']))}")
 
     # GitHub, 60 gün aktivite olmayan repolarda zamanlanmış işleri durdurur;
     # ayda bir state dosyasının değişmesi repoyu aktif tutar.
