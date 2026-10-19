@@ -37,3 +37,4 @@ jobs:
             git commit -m "Sinyal durumu güncellendi [skip ci]"
             git push
           fi
+          
