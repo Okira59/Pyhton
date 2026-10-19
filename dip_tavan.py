@@ -3,7 +3,7 @@
 15dk, 30dk, 45dk ve 1s grafiklerde EMA, Bollinger, RSI, StochRSI, MACD ve Hacim
 göstergeleriyle dip (🟢 AL) ve tavan (🔴 SAT) noktalarını arar. Açılan işlem,
 +TP_PIPS kâra ulaşınca ya da ters yönde yeni sinyal gelince kapatılır ve kapanış
-mesajına kâr/zarar yüzdesi eklenir.
+mesajına kâr/zarar yüzdesi eklenir. -SL_PIPS zararda işlem otomatik kapanır.
 """
 import argparse
 import json
@@ -26,6 +26,7 @@ MIN_SCORE_15M = 4       # 15dk'da 6 göstergeden en az 4'ü dip/tavan demeli
 MIN_SCORE_HIGHER = 2    # 30dk/45dk/1s'den en az ikisinde en az 2 gösterge onaylamalı
 
 TP_PIPS = float(os.getenv("TP_PIPS", "10"))
+SL_PIPS = float(os.getenv("SL_PIPS", "20"))  # zarar durdur
 PIP_SIZE = float(os.getenv("PIP_SIZE", "1.0"))  # altında 1 pip = 1 $
 
 STATE_FILE = os.getenv("STATE_FILE", "dip_tavan_state.json")
@@ -111,7 +112,8 @@ def _open_text(row: pd.Series, direction: int) -> str:
     target = row["Close"] + direction * TP_PIPS * PIP_SIZE
     lines = [head, f"XAU/USD  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
              f"Giriş fiyatı: {row['Close']:.2f}",
-             f"Kâr al hedefi (+{TP_PIPS:g} pip): {target:.2f}", ""]
+             f"Kâr al hedefi (+{TP_PIPS:g} pip): {target:.2f}",
+             f"Zarar durdur (-{SL_PIPS:g} pip): {row['Close'] - direction * SL_PIPS * PIP_SIZE:.2f}", ""]
     for name in TIMEFRAMES:
         lst = row[f"{key}_list_{name}"]
         lines.append(f"{name:<5} {len(lst)}/6  {', '.join(lst) if lst else '-'}")
@@ -138,9 +140,13 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
         sig = int(row["new_signal"])
         if pos and row["close_time"] > pd.Timestamp(pos["time"]):
             target = pos["entry"] + pos["dir"] * TP_PIPS * PIP_SIZE
+            stop = pos["entry"] - pos["dir"] * SL_PIPS * PIP_SIZE
             hit = row["High"] >= target if pos["dir"] == 1 else row["Low"] <= target
+            stopped = row["Low"] <= stop if pos["dir"] == 1 else row["High"] >= stop
             exit_price, reason = None, None
-            if hit:
+            if stopped:  # aynı mumda ikisi de olduysa temkinli davran: zarar say
+                exit_price, reason = stop, f"-{SL_PIPS:g} pip zarar durdur"
+            elif hit:
                 exit_price, reason = target, f"+{TP_PIPS:g} pip kâr hedefine ulaşıldı"
             elif sig == -pos["dir"]:
                 exit_price, reason = float(row["Close"]), "ters yönde yeni sinyal"

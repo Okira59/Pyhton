@@ -56,8 +56,8 @@ GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
 ## İkinci bot: Dip-Tavan (dip_tavan.py)
 15dk, 30dk, 45dk ve 1s grafiklerde EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD(12,26,9) ve Hacim(20)
 ile dip (🟢 AL) ve tavan (🔴 SAT) arar. Sinyal için: 15dk'da 6 koşuldan en az 4'ü, 30dk/45dk/1s'den en az ikisinde en az 2 koşul.
-İşlem +10 pip ($10) kâra ulaşınca ya da ters sinyal gelince kapanır; kapanış mesajında kâr/zarar yüzdesi yazar.
-Zarar durdur (stop-loss) yoktur.
+İşlem +10 pip ($10) kâra ulaşınca, -20 pip ($20) zarara ulaşınca (zarar durdur) ya da ters sinyal gelince kapanır;
+kapanış mesajında kâr/zarar yüzdesi yazar. Ayarlar: `TP_PIPS`, `SL_PIPS`, `PIP_SIZE`.
 ```bash
 python dip_tavan.py            # son durum
 python dip_tavan.py --history  # son 60 günün sinyalleri + kâr/zarar özeti
