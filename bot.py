@@ -4,6 +4,7 @@ Sinyal mantığı: 15dk ve 4s grafiklerde Bollinger, EMA, MACD ve StochRSI
 göstergelerinin HEPSİ aynı yönü gösterdiğinde AL veya SAT sinyali üretilir.
 """
 import argparse
+import json
 import os
 import time
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ STOCH_OVERBOUGHT, STOCH_OVERSOLD = 80, 20
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+STATE_FILE = os.getenv("STATE_FILE", "state.json")
+MAX_SIGNAL_AGE = pd.Timedelta(hours=2)  # bundan eski sinyaller bildirilmez
 # ----------------------------------------------------------------------------
 
 INDICATORS = ["EMA", "BOLLINGER", "MACD", "STOCHRSI"]
@@ -159,6 +162,45 @@ def run_loop():
         time.sleep(wait)
 
 
+def _load_state() -> dict:
+    try:
+        with open(STATE_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def check_and_notify():
+    """Zamanlanmış (ör. GitHub Actions) tek seferlik çalışma.
+
+    Son kontrolden bu yana oluşan yeni sinyali bulur, Telegram'a gönderir ve
+    tekrar gönderilmemesi için state dosyasına kaydeder.
+    """
+    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+        raise SystemExit("TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID tanımlı olmalı.")
+    state = _load_state()
+    data = combine(*fetch_data())
+    print(format_report(data.iloc[-1]) + "\n")
+
+    hits = data[data["new_signal"] != 0]
+    if not hits.empty:
+        row = hits.iloc[-1]
+        sent = state.get("last_signal_time")
+        is_new = sent is None or row["close_time"] > pd.Timestamp(sent)
+        is_fresh = pd.Timestamp.now(tz="UTC") - row["close_time"] <= MAX_SIGNAL_AGE
+        if is_new and is_fresh:
+            send_telegram(format_report(row))
+            print("Telegram'a sinyal gönderildi.")
+        if is_new:
+            state["last_signal_time"] = row["close_time"].isoformat()
+
+    # GitHub, 60 gün aktivite olmayan repolarda zamanlanmış işleri durdurur;
+    # ayda bir state dosyasının değişmesi repoyu aktif tutar.
+    state["heartbeat"] = datetime.now(timezone.utc).strftime("%Y-%m")
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
 def show_history():
     data = combine(*fetch_data())
     hits = data[data["new_signal"] != 0]
@@ -171,8 +213,12 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Altın (XAU/USD) AL/SAT sinyal botu")
     p.add_argument("--loop", action="store_true", help="Sürekli çalış, her 15dk kontrol et")
     p.add_argument("--history", action="store_true", help="Son 60 gündeki sinyalleri listele")
+    p.add_argument("--notify", action="store_true",
+                   help="Tek seferlik kontrol; yeni sinyal varsa Telegram'a gönder (GitHub Actions için)")
     args = p.parse_args()
-    if args.history:
+    if args.notify:
+        check_and_notify()
+    elif args.history:
         show_history()
     elif args.loop:
         run_loop()

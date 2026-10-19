@@ -34,6 +34,15 @@ python bot.py --loop
 ```
 `--loop` modunda yalnızca **yeni** oluşan sinyaller gönderilir.
 
+## 7/24 çalıştırma (GitHub Actions)
+`.github/workflows/sinyal.yml` her 15 dakikada bir `python bot.py --notify` çalıştırır ve yeni sinyalleri Telegram'a gönderir.
+Gerekenler (Repo → Settings → Secrets and variables → Actions):
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+
+Elle tetiklemek için: Actions → "Altin Sinyal Botu" → Run workflow.
+GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
+
 ## Notlar
 - Veri kaynağı Yahoo Finance `GC=F` (altın vadeli). Fiyatı brokerınızdaki XAU/USD spot fiyatından birkaç dolar farklı olabilir, ancak göstergelerin yönü pratikte aynıdır.
 - Yahoo 4s veri sunmadığı için 4s mumlar 1s veriden (UTC 00/04/08/12/16/20) oluşturulur.
