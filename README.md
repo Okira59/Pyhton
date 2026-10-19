@@ -53,10 +53,13 @@ GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
 - Yahoo 4s veri sunmadığı için 4s mumlar 1s veriden (UTC 00/04/08/12/16/20) oluşturulur.
 - Bu bot yatırım tavsiyesi değildir; gerçek hesapta kullanmadan önce demo hesapta test edin.
 
-## İkinci bot: 15dk sinyal (bot15.py)
-Her kapanan 15dk mumda EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD(12,26,9) ve Hacim(20) oylarıyla mutlaka AL/SAT gönderir; mesajda güç (ör. 5/6) ve +10 pip hedef yazar.
+## İkinci bot: Dip-Tavan (dip_tavan.py)
+15dk, 30dk, 45dk ve 1s grafiklerde EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD(12,26,9) ve Hacim(20)
+ile dip (🟢 AL) ve tavan (🔴 SAT) arar. Sinyal için: 15dk'da 6 koşuldan en az 4'ü, 30dk/45dk/1s'den en az ikisinde en az 2 koşul.
+İşlem +10 pip ($10) kâra ulaşınca ya da ters sinyal gelince kapanır; kapanış mesajında kâr/zarar yüzdesi yazar.
+Zarar durdur (stop-loss) yoktur.
 ```bash
-python bot15.py            # son mumun sinyali
-python bot15.py --history  # son sinyaller + isabet oranı
+python dip_tavan.py            # son durum
+python dip_tavan.py --history  # son 60 günün sinyalleri + kâr/zarar özeti
 ```
-GitHub Actions: `.github/workflows/sinyal15.yml`, secret `TELEGRAM_BOT_TOKEN_15` (chat ID için `TELEGRAM_CHAT_ID_15`, yoksa `TELEGRAM_CHAT_ID` kullanılır).
+GitHub Actions: `.github/workflows/dip_tavan.yml`, secret `TELEGRAM_BOT_TOKEN_15` (chat ID: `TELEGRAM_CHAT_ID_15`, yoksa `TELEGRAM_CHAT_ID`).
