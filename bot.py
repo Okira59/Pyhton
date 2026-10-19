@@ -26,7 +26,7 @@ STOCH_OVERBOUGHT, STOCH_OVERSOLD = 80, 20
 
 # Kâr al: sinyalden sonra fiyat bu kadar pip kâra ulaşınca "KAPAT" sinyali
 TP_PIPS = float(os.getenv("TP_PIPS", "10"))
-PIP_SIZE = float(os.getenv("PIP_SIZE", "0.10"))  # altında 1 pip = 0.10 $ (10 pip = 1 $)
+PIP_SIZE = float(os.getenv("PIP_SIZE", "1.0"))  # altında 1 pip = 1 $ (10 pip = 10 $)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
