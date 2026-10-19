@@ -39,7 +39,7 @@ TF_15M = pd.Timedelta(minutes=15)
 TF_4H = pd.Timedelta(hours=4)
 
 
-def _download(interval: str, period: str) -> pd.DataFrame:
+def _download(interval: str, period: str, with_volume: bool = False) -> pd.DataFrame:
     df = yf.download(SYMBOL, interval=interval, period=period,
                      progress=False, auto_adjust=False)
     if df.empty:
@@ -47,7 +47,8 @@ def _download(interval: str, period: str) -> pd.DataFrame:
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df.index = pd.to_datetime(df.index, utc=True)
-    return df[["Open", "High", "Low", "Close"]].dropna()
+    cols = ["Open", "High", "Low", "Close"] + (["Volume"] if with_volume else [])
+    return df[cols].dropna()
 
 
 def _closed_only(df: pd.DataFrame, tf: pd.Timedelta) -> pd.DataFrame:

@@ -52,3 +52,11 @@ GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
 - Veri kaynağı Yahoo Finance `GC=F` (altın vadeli). Fiyatı brokerınızdaki XAU/USD spot fiyatından birkaç dolar farklı olabilir, ancak göstergelerin yönü pratikte aynıdır.
 - Yahoo 4s veri sunmadığı için 4s mumlar 1s veriden (UTC 00/04/08/12/16/20) oluşturulur.
 - Bu bot yatırım tavsiyesi değildir; gerçek hesapta kullanmadan önce demo hesapta test edin.
+
+## İkinci bot: 15dk sinyal (bot15.py)
+Her kapanan 15dk mumda EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD(12,26,9) ve Hacim(20) oylarıyla mutlaka AL/SAT gönderir; mesajda güç (ör. 5/6) ve +10 pip hedef yazar.
+```bash
+python bot15.py            # son mumun sinyali
+python bot15.py --history  # son sinyaller + isabet oranı
+```
+GitHub Actions: `.github/workflows/sinyal15.yml`, secret `TELEGRAM_BOT_TOKEN_15` (chat ID için `TELEGRAM_CHAT_ID_15`, yoksa `TELEGRAM_CHAT_ID` kullanılır).
