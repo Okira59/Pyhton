@@ -17,7 +17,11 @@ import dashboard
 from indicators import bollinger, ema, macd, stoch_rsi
 
 # ---------------------------------------------------------------- AYARLAR ---
-SYMBOL = os.getenv("SYMBOL", "GC=F")  # Yahoo'da altın vadeli (spot XAU/USD'ye çok yakın)
+# Veri kaynağı: Bitget XAUUSDT (broker XAU/USD fiyatına 1-2 pip yakın) ya da Yahoo GC=F
+DATA_SOURCE = os.getenv("DATA_SOURCE", "bitget")
+SYMBOL = os.getenv("SYMBOL", "XAUUSDT" if DATA_SOURCE == "bitget" else "GC=F")
+BITGET_MAX_DAYS = 120
+SKIP_WEEKEND = os.getenv("SKIP_WEEKEND", "1") == "1"  # forex kapalıyken (Cuma 21:00-Pazar 22:00 UTC) mumları at
 
 EMA_FAST, EMA_SLOW = 20, 50
 BB_PERIOD, BB_STD = 20, 2.0
@@ -40,7 +44,51 @@ TF_15M = pd.Timedelta(minutes=15)
 TF_4H = pd.Timedelta(hours=4)
 
 
+_BITGET_URL = "https://api.bitget.com/api/v2/mix/market/history-candles"
+_BITGET_GRAN = {"15m": ("15m", 15), "1h": ("1H", 60)}
+
+
+def _bitget(interval: str, days: int) -> pd.DataFrame:
+    """Bitget USDT vadeli mum verisi (sayfa sayfa, 200'er mum)."""
+    gran, minutes = _BITGET_GRAN[interval]
+    start = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=min(days, BITGET_MAX_DAYS))
+    end_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000) + minutes * 60_000
+    rows = []
+    while True:
+        for attempt in range(6):  # istek sınırı (429) aşılırsa bekleyip tekrar dene
+            r = requests.get(_BITGET_URL, params={
+                "symbol": SYMBOL, "productType": "USDT-FUTURES", "granularity": gran,
+                "limit": 200, "endTime": end_ms}, timeout=15)
+            if r.status_code != 429:
+                break
+            time.sleep(1 + attempt)
+        r.raise_for_status()
+        time.sleep(0.15)
+        batch = r.json().get("data") or []
+        if not batch:
+            break
+        rows += batch
+        first = int(batch[0][0])
+        if first <= start.timestamp() * 1000 or len(batch) < 200:
+            break
+        end_ms = first
+    if not rows:
+        raise RuntimeError(f"Bitget {SYMBOL} için veri alınamadı ({interval}).")
+    df = pd.DataFrame([r_[:6] for r_ in rows],
+                      columns=["ts", "Open", "High", "Low", "Close", "Volume"]).astype(float)
+    df.index = pd.to_datetime(df.pop("ts").astype("int64"), unit="ms", utc=True)
+    df = df[~df.index.duplicated()].sort_index()
+    if SKIP_WEEKEND:
+        wd, hr = df.index.weekday, df.index.hour
+        weekend = ((wd == 4) & (hr >= 21)) | (wd == 5) | ((wd == 6) & (hr < 22))
+        df = df[~weekend]
+    return df[df.index >= start]
+
+
 def _download(interval: str, period: str, with_volume: bool = False) -> pd.DataFrame:
+    cols = ["Open", "High", "Low", "Close"] + (["Volume"] if with_volume else [])
+    if DATA_SOURCE == "bitget":
+        return _bitget(interval, int(period.rstrip("d")))[cols].dropna()
     df = yf.download(SYMBOL, interval=interval, period=period,
                      progress=False, auto_adjust=False)
     if df.empty:
@@ -48,7 +96,6 @@ def _download(interval: str, period: str, with_volume: bool = False) -> pd.DataF
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df.index = pd.to_datetime(df.index, utc=True)
-    cols = ["Open", "High", "Low", "Close"] + (["Volume"] if with_volume else [])
     return df[cols].dropna()
 
 
@@ -126,7 +173,7 @@ def _arrow(v):
 def format_report(row: pd.Series) -> str:
     sig = {1: "🟢 AL SİNYALİ", -1: "🔴 SAT SİNYALİ"}.get(int(row["signal"]), "⚪ Sinyal yok")
     lines = [
-        f"XAU/USD ({SYMBOL})  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
+        f"XAU/USD ({SYMBOL} {DATA_SOURCE.capitalize()})  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
         f"Fiyat: {row['Close']:.2f}",
         f"{'Gösterge':<10} {'15dk':<8} {'4s':<8}",
     ]

@@ -1,8 +1,0 @@
-name: Bitget erisim testi
-on: workflow_dispatch
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - run: |
-          curl -s -w "\nHTTP %{http_code}\n" "https://api.bitget.com/api/v2/mix/market/candles?symbol=XAUUSDT&productType=USDT-FUTURES&granularity=15m&limit=2"

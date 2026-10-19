@@ -49,8 +49,8 @@ Elle tetiklemek için: Actions → "Altin Sinyal Botu" → Run workflow.
 GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
 
 ## Notlar
-- Veri kaynağı Yahoo Finance `GC=F` (altın vadeli). Fiyatı brokerınızdaki XAU/USD spot fiyatından birkaç dolar farklı olabilir, ancak göstergelerin yönü pratikte aynıdır.
-- Yahoo 4s veri sunmadığı için 4s mumlar 1s veriden (UTC 00/04/08/12/16/20) oluşturulur.
+- Veri kaynağı Bitget `XAUUSDT` (USDT vadeli altın), broker XAU/USD fiyatına 1-2 pip yakın. Forex kapalıyken (Cuma 21:00 - Pazar 22:00 UTC) oluşan mumlar kullanılmaz. Yahoo `GC=F` için `DATA_SOURCE=yahoo` ayarlanabilir.
+- 4s mumlar 1s veriden (UTC 00/04/08/12/16/20) oluşturulur.
 - Bu bot yatırım tavsiyesi değildir; gerçek hesapta kullanmadan önce demo hesapta test edin.
 
 ## İkinci bot: Dip-Tavan (dip_tavan.py)
