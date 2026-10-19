@@ -12,7 +12,7 @@ import os
 import pandas as pd
 
 import dashboard
-from bot import SYMBOL, TF_15M, _closed_only, _download, position_line, send_telegram, status_due
+from bot import SOURCE_LABEL, SYMBOL, TF_15M, _closed_only, _download, position_line, send_telegram, status_due
 from indicators import bollinger, ema, macd, rsi, stoch_rsi
 
 # ---------------------------------------------------------------- AYARLAR ---
@@ -111,7 +111,7 @@ def _open_text(row: pd.Series, direction: int) -> str:
     key = "dip" if direction == 1 else "top"
     head = "🟢🟢 DİP – AL SİNYALİ 🟢🟢" if direction == 1 else "🔴🔴 TAVAN – SAT SİNYALİ 🔴🔴"
     target = row["Close"] + direction * TP_PIPS * PIP_SIZE
-    lines = [head, f"XAU/USD  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
+    lines = [head, f"XAU/USD ({SOURCE_LABEL})  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
              f"Giriş fiyatı: {row['Close']:.2f}",
              f"Kâr al hedefi (+{TP_PIPS:g} pip): {target:.2f}",
              f"Zarar durdur (-{SL_PIPS:g} pip): {row['Close'] - direction * SL_PIPS * PIP_SIZE:.2f}", ""]
@@ -167,7 +167,7 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
 
 def _status_text(row: pd.Series, pos) -> str:
     lines = ["🕐 SAATLİK DURUM – Dip/Tavan",
-             f"XAU/USD  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
+             f"XAU/USD ({SOURCE_LABEL})  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
              f"Fiyat: {row['Close']:.2f}", "",
              f"{'':<5} {'🟢 dip':<7} {'🔴 tavan':<8}"]
     for n in TIMEFRAMES:
@@ -216,6 +216,7 @@ def export_dashboard(data: pd.DataFrame, state: dict):
     history = dashboard.events_to_list(process_events(data, {}))
     dashboard.write("dip_tavan", {
         "symbol": SYMBOL,
+        "source": SOURCE_LABEL,
         "close_time": dashboard.ts(last["close_time"]),
         "price": round(float(last["Close"]), 2),
         "scores": {n: {"dip": int(last[f"dip_{n}"]), "top": int(last[f"top_{n}"]),

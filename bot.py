@@ -17,9 +17,11 @@ import dashboard
 from indicators import bollinger, ema, macd, stoch_rsi
 
 # ---------------------------------------------------------------- AYARLAR ---
-# Veri kaynağı: Bitget XAUUSDT (broker XAU/USD fiyatına 1-2 pip yakın) ya da Yahoo GC=F
-DATA_SOURCE = os.getenv("DATA_SOURCE", "bitget")
-SYMBOL = os.getenv("SYMBOL", "XAUUSDT" if DATA_SOURCE == "bitget" else "GC=F")
+# Veri kaynağı: Bitget TradFi XAUUSD (varsayılan), Bitget vadeli XAUUSDT ya da Yahoo GC=F
+DATA_SOURCE = os.getenv("DATA_SOURCE", "tradfi")
+SYMBOL = os.getenv("SYMBOL", {"tradfi": "XAUUSD", "bitget": "XAUUSDT"}.get(DATA_SOURCE, "GC=F"))
+SOURCE_LABEL = {"tradfi": "Bitget TradFi", "bitget": "Bitget Vadeli", "yahoo": "Yahoo"}.get(DATA_SOURCE, DATA_SOURCE)
+VOLUME_SYMBOL = "XAUUSDT"  # TradFi hacim vermediği için hacim Bitget vadeliden alınır
 BITGET_MAX_DAYS = 120
 SKIP_WEEKEND = os.getenv("SKIP_WEEKEND", "1") == "1"  # forex kapalıyken (Cuma 21:00-Pazar 22:00 UTC) mumları at
 
@@ -46,34 +48,38 @@ TF_4H = pd.Timedelta(hours=4)
 
 _BITGET_URL = "https://api.bitget.com/api/v2/mix/market/history-candles"
 _BITGET_GRAN = {"15m": ("15m", 15), "1h": ("1H", 60)}
+_TRADFI_URL = "https://www.bitget.com/v1/kline/getMoreKlineDataV2"
+_TRADFI_BID = "5"  # Bitget TradFi grafiğindeki varsayılan fiyat tipi (bid)
 
 
-def _bitget(interval: str, days: int) -> pd.DataFrame:
-    """Bitget USDT vadeli mum verisi (sayfa sayfa, 200'er mum)."""
-    gran, minutes = _BITGET_GRAN[interval]
-    start = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=min(days, BITGET_MAX_DAYS))
-    end_ms = int(pd.Timestamp.now(tz="UTC").timestamp() * 1000) + minutes * 60_000
+def _get_json(url: str, params: dict) -> dict:
+    """GET + istek sınırı (429) aşılırsa bekleyip tekrar dene."""
+    for attempt in range(6):
+        r = requests.get(url, params=params, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 429:
+            break
+        time.sleep(1 + attempt)
+    r.raise_for_status()
+    time.sleep(0.15)
+    return r.json()
+
+
+def _paginate(fetch_page, start: pd.Timestamp, end_ms: int) -> list:
+    """endTime'ı geriye kaydırarak sayfa sayfa mum topla."""
     rows = []
     while True:
-        for attempt in range(6):  # istek sınırı (429) aşılırsa bekleyip tekrar dene
-            r = requests.get(_BITGET_URL, params={
-                "symbol": SYMBOL, "productType": "USDT-FUTURES", "granularity": gran,
-                "limit": 200, "endTime": end_ms}, timeout=15)
-            if r.status_code != 429:
-                break
-            time.sleep(1 + attempt)
-        r.raise_for_status()
-        time.sleep(0.15)
-        batch = r.json().get("data") or []
+        batch = fetch_page(end_ms)
         if not batch:
             break
         rows += batch
         first = int(batch[0][0])
-        if first <= start.timestamp() * 1000 or len(batch) < 200:
+        if first <= start.timestamp() * 1000 or first >= end_ms:
             break
         end_ms = first
-    if not rows:
-        raise RuntimeError(f"Bitget {SYMBOL} için veri alınamadı ({interval}).")
+    return rows
+
+
+def _to_frame(rows: list, start: pd.Timestamp) -> pd.DataFrame:
     df = pd.DataFrame([r_[:6] for r_ in rows],
                       columns=["ts", "Open", "High", "Low", "Close", "Volume"]).astype(float)
     df.index = pd.to_datetime(df.pop("ts").astype("int64"), unit="ms", utc=True)
@@ -85,10 +91,51 @@ def _bitget(interval: str, days: int) -> pd.DataFrame:
     return df[df.index >= start]
 
 
+def _window(days: int, minutes: int):
+    now = pd.Timestamp.now(tz="UTC")
+    return now - pd.Timedelta(days=min(days, BITGET_MAX_DAYS)), int(now.timestamp() * 1000) + minutes * 60_000
+
+
+def _bitget(interval: str, days: int, symbol: str = SYMBOL) -> pd.DataFrame:
+    """Bitget USDT vadeli mum verisi (sayfa başına 200 mum)."""
+    gran, minutes = _BITGET_GRAN[interval]
+    start, end_ms = _window(days, minutes)
+    rows = _paginate(lambda e: _get_json(_BITGET_URL, {
+        "symbol": symbol, "productType": "USDT-FUTURES", "granularity": gran,
+        "limit": 200, "endTime": e}).get("data") or [], start, end_ms)
+    if not rows:
+        raise RuntimeError(f"Bitget {symbol} için veri alınamadı ({interval}).")
+    return _to_frame(rows, start)
+
+
+def _tradfi_page(interval: str, end_ms: int) -> list:
+    d = _get_json(_TRADFI_URL, {"symbolId": SYMBOL, "kLineStep": interval,
+                                "kLineType": _TRADFI_BID, "endTime": end_ms})
+    if d.get("code") != "00000":
+        raise RuntimeError(f"Bitget TradFi hatası: {d.get('code')} {d.get('msg')}")
+    return d.get("data") or []
+
+
+def _tradfi(interval: str, days: int) -> pd.DataFrame:
+    """Bitget TradFi (MT5) mum verisi (sayfa başına 1000 mum, hacim yok)."""
+    start, end_ms = _window(days, _BITGET_GRAN[interval][1])
+    rows = _paginate(lambda e: _tradfi_page(interval, e), start, end_ms)
+    if not rows:
+        raise RuntimeError(f"Bitget TradFi {SYMBOL} için veri alınamadı ({interval}).")
+    return _to_frame(rows, start)
+
+
 def _download(interval: str, period: str, with_volume: bool = False) -> pd.DataFrame:
     cols = ["Open", "High", "Low", "Close"] + (["Volume"] if with_volume else [])
+    days = int(period.rstrip("d"))
+    if DATA_SOURCE == "tradfi":
+        df = _tradfi(interval, days)
+        if with_volume:
+            vol = _bitget(interval, days, VOLUME_SYMBOL)["Volume"]
+            df["Volume"] = vol.reindex(df.index).fillna(0.0)
+        return df[cols].dropna()
     if DATA_SOURCE == "bitget":
-        return _bitget(interval, int(period.rstrip("d")))[cols].dropna()
+        return _bitget(interval, days)[cols].dropna()
     df = yf.download(SYMBOL, interval=interval, period=period,
                      progress=False, auto_adjust=False)
     if df.empty:
@@ -173,7 +220,7 @@ def _arrow(v):
 def format_report(row: pd.Series) -> str:
     sig = {1: "🟢 AL SİNYALİ", -1: "🔴 SAT SİNYALİ"}.get(int(row["signal"]), "⚪ Sinyal yok")
     lines = [
-        f"XAU/USD ({SYMBOL} {DATA_SOURCE.capitalize()})  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
+        f"XAU/USD ({SYMBOL} {SOURCE_LABEL})  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
         f"Fiyat: {row['Close']:.2f}",
         f"{'Gösterge':<10} {'15dk':<8} {'4s':<8}",
     ]
@@ -337,6 +384,7 @@ def export_dashboard(data: pd.DataFrame, state: dict):
     history = dashboard.events_to_list(process_events(data, {}))
     dashboard.write("sinyal", {
         "symbol": SYMBOL,
+        "source": SOURCE_LABEL,
         "close_time": dashboard.ts(last["close_time"]),
         "price": round(float(last["Close"]), 2),
         "indicators": {ind: {"15dk": int(last[ind]), "4s": int(last["h4_" + ind])}

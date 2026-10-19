@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dip-Tavan Botu</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>XAU/USD · Dip-Tavan Botu</h1>
+  <div><span class="price" id="price">–</span> <span class="muted small" id="candle"></span></div>
+  <nav>
+    <a href="index.html">Altın Sinyal</a>
+    <a href="dip-tavan.html" class="active">Dip-Tavan</a>
+  </nav>
+  <div class="muted small" style="margin-left:auto;text-align:right">
+    Veri: <span id="source">–</span> · Son güncelleme: <span id="updated">–</span><br>
+    Sayfa her dakika yenilenir · bot her 15 dakikada çalışır
+  </div>
+</header>
+<div id="error"></div>
+<main>
+  <section class="card wide">
+    <h2>Fiyat grafiği (15dk) <span class="muted small">▲ AL (dip) · ▼ SAT (tavan)</span></h2>
+    <div id="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Dip / tavan puanları <span class="muted small">15dk · 30dk · 45dk · 1s · 6 gösterge</span></h2>
+    <table id="d-scores"></table>
+    <div id="d-result" class="result"></div>
+    <h3>Açık işlem</h3>
+    <div id="d-pos"></div>
+  </section>
+
+  <section class="card">
+    <h2>Son 60 gün</h2>
+    <div class="stats" id="d-stats"></div>
+    <div class="scroll"><table id="d-hist"></table></div>
+  </section>
+
+  <p class="muted small wide">Fiyatlar Bitget TradFi XAUUSD (bid) mumlarıdır; forex kapalıyken (hafta sonu) mum yoktur.
+  "Son 60 gün" tabloları geçmiş veriler üzerinde geriye dönük hesaplanmıştır; spread/komisyon dahil değildir. Yatırım tavsiyesi değildir.</p>
+</main>
+<script src="common.js"></script>
+<script>
+startPage("dip_tavan", d => {
+  const bar = (n, cls) => `<div class="bar"><span style="width:${n / 6 * 100}%;background:var(--${cls})"></span></div>`;
+  $("d-scores").innerHTML = "<tr><th>Zaman dilimi</th><th>Dip (AL)</th><th></th><th>Tavan (SAT)</th><th></th></tr>" +
+    Object.entries(d.scores).map(([tf, v]) => `<tr>
+      <td><b>${tf}</b></td>
+      <td class="green" title="${v.dip_list.join(", ")}">${v.dip}/6</td><td style="width:22%">${bar(v.dip, "green")}</td>
+      <td class="red" title="${v.top_list.join(", ")}">${v.top}/6</td><td style="width:22%">${bar(v.top, "red")}</td>
+    </tr>`).join("");
+  const s = d.scores, higher = ["30dk", "45dk", "1s"];
+  const dip = s["15dk"].dip >= d.min_score_15m && higher.filter(t => s[t].dip >= d.min_score_higher).length >= 2;
+  const top = s["15dk"].top >= d.min_score_15m && higher.filter(t => s[t].top >= d.min_score_higher).length >= 2;
+  const r = $("d-result");
+  r.className = "result " + (dip ? "buy" : top ? "sell" : "neutral");
+  r.textContent = dip ? "🟢 DİP – AL BÖLGESİ" : top ? "🔴 TAVAN – SAT BÖLGESİ"
+    : `⚪ Dip/tavan yok · 15dk'da en az ${d.min_score_15m}/6 gerekli`;
+  $("d-pos").innerHTML = positionHtml(d.position, d.price, d.tp_pips, d.sl_pips, d.pip_size);
+  $("d-stats").innerHTML = statsHtml(d.stats);
+  $("d-hist").innerHTML = historyHtml(d.history);
+  renderChart(d, d.sl_pips);
+});
+</script>
+</body>
+</html>

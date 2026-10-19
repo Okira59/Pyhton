@@ -49,7 +49,7 @@ Elle tetiklemek için: Actions → "Altin Sinyal Botu" → Run workflow.
 GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
 
 ## Notlar
-- Veri kaynağı Bitget `XAUUSDT` (USDT vadeli altın), broker XAU/USD fiyatına 1-2 pip yakın. Forex kapalıyken (Cuma 21:00 - Pazar 22:00 UTC) oluşan mumlar kullanılmaz. Yahoo `GC=F` için `DATA_SOURCE=yahoo` ayarlanabilir.
+- Veri kaynağı Bitget TradFi `XAUUSD` (MT5, bid fiyatı; Bitget'in herkese açık web grafiği uç noktası `v1/kline/getMoreKlineDataV2`). TradFi hacim vermediği için Dip-Tavan botunun hacim göstergesi Bitget vadeli `XAUUSDT` hacmini kullanır. Forex kapalıyken (Cuma 21:00 - Pazar 22:00 UTC) mum kullanılmaz. Alternatifler: `DATA_SOURCE=bitget` (XAUUSDT vadeli) veya `DATA_SOURCE=yahoo` (GC=F).
 - 4s mumlar 1s veriden (UTC 00/04/08/12/16/20) oluşturulur.
 - Bu bot yatırım tavsiyesi değildir; gerçek hesapta kullanmadan önce demo hesapta test edin.
 
@@ -67,7 +67,7 @@ GitHub Actions: `.github/workflows/dip_tavan.yml`, secret `TELEGRAM_BOT_TOKEN_15
 ## Web paneli
 
 İki botun durumu (fiyat grafiği, gösterge tabloları, açık işlem, son 60 günün sinyalleri ve kâr/zarar yüzdeleri)
-`docs/index.html` sayfasında gösterilir: https://okira59.github.io/Pyhton/
+`docs/index.html` sayfasında gösterilir: https://okira59.github.io/Pyhton/ (Altın Sinyal) ve https://okira59.github.io/Pyhton/dip-tavan.html (Dip-Tavan)
 
 Botlar her çalışmada `docs/data/sinyal.json` ve `docs/data/dip_tavan.json` dosyalarını günceller; sayfa her dakika yenilenir.
 
