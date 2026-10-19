@@ -24,6 +24,10 @@ MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
 STOCH_RSI, STOCH_PERIOD, STOCH_K, STOCH_D = 14, 14, 3, 3
 STOCH_OVERBOUGHT, STOCH_OVERSOLD = 80, 20
 
+# Kâr al: sinyalden sonra fiyat bu kadar pip kâra ulaşınca "KAPAT" sinyali
+TP_PIPS = float(os.getenv("TP_PIPS", "10"))
+PIP_SIZE = float(os.getenv("PIP_SIZE", "0.10"))  # altında 1 pip = 0.10 $ (10 pip = 1 $)
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 STATE_FILE = os.getenv("STATE_FILE", "state.json")
@@ -154,7 +158,7 @@ def run_loop():
     print("Bot çalışıyor. Her 15dk mum kapanışında kontrol edilecek (Ctrl+C ile çıkış).\n")
     while True:
         try:
-            check_once(notify_only_new=True)
+            check_and_notify(require_telegram=False)
         except Exception as e:  # ağ hatalarında botun durmaması için
             print(f"Hata: {e}")
         now = datetime.now(timezone.utc).timestamp()
@@ -170,29 +174,71 @@ def _load_state() -> dict:
         return {}
 
 
-def check_and_notify():
+def _target(direction: int, entry: float) -> float:
+    return entry + direction * TP_PIPS * PIP_SIZE
+
+
+def _open_text(row: pd.Series) -> str:
+    target = _target(int(row["new_signal"]), row["Close"])
+    return f"{format_report(row)}\nKâr al hedefi (+{TP_PIPS:g} pip): {target:.2f}"
+
+
+def _close_text(pos: dict, row: pd.Series) -> str:
+    side = "AL" if pos["dir"] == 1 else "SAT"
+    return (f"🎯 İŞLEMİ KAPAT  |  {row['close_time']:%Y-%m-%d %H:%M} UTC\n"
+            f"{side} işlemi +{TP_PIPS:g} pip kâra ulaştı.\n"
+            f"Giriş: {pos['entry']:.2f}  →  Hedef: {pos['target']:.2f}\n"
+            f"Güncel fiyat: {row['Close']:.2f}")
+
+
+def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
+    """Mumları kronolojik işler: kâr al (KAPAT) ve yeni AL/SAT olayları üretir.
+
+    state["position"] açık işlemi tutar. Dönen liste: (zaman, tür, mesaj).
+    """
+    events = []
+    rows = data if since is None else data[data["close_time"] > since]
+    for _, row in rows.iterrows():
+        pos = state.get("position")
+        if pos and row["close_time"] > pd.Timestamp(pos["time"]):
+            hit = (row["High"] >= pos["target"]) if pos["dir"] == 1 else (row["Low"] <= pos["target"])
+            if hit:
+                events.append((row["close_time"], "KAPAT", _close_text(pos, row)))
+                state["position"] = None
+        if row["new_signal"] != 0:
+            events.append((row["close_time"], "SINYAL", _open_text(row)))
+            state["position"] = {
+                "dir": int(row["new_signal"]),
+                "entry": float(row["Close"]),
+                "target": float(_target(int(row["new_signal"]), row["Close"])),
+                "time": row["close_time"].isoformat(),
+            }
+    return events
+
+
+def check_and_notify(require_telegram: bool = True):
     """Zamanlanmış (ör. GitHub Actions) tek seferlik çalışma.
 
-    Son kontrolden bu yana oluşan yeni sinyali bulur, Telegram'a gönderir ve
-    tekrar gönderilmemesi için state dosyasına kaydeder.
+    Son kontrolden bu yana oluşan yeni AL/SAT ve KAPAT sinyallerini bulur,
+    Telegram'a gönderir ve tekrar gönderilmemesi için state dosyasına kaydeder.
     """
-    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+    if require_telegram and not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
         raise SystemExit("TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID tanımlı olmalı.")
     state = _load_state()
     data = combine(*fetch_data())
     print(format_report(data.iloc[-1]) + "\n")
 
-    hits = data[data["new_signal"] != 0]
-    if not hits.empty:
-        row = hits.iloc[-1]
-        sent = state.get("last_signal_time")
-        is_new = sent is None or row["close_time"] > pd.Timestamp(sent)
-        is_fresh = pd.Timestamp.now(tz="UTC") - row["close_time"] <= MAX_SIGNAL_AGE
-        if is_new and is_fresh:
-            send_telegram(format_report(row))
-            print("Telegram'a sinyal gönderildi.")
-        if is_new:
-            state["last_signal_time"] = row["close_time"].isoformat()
+    last = state.get("last_processed")
+    if last is None:  # ilk çalışma: geçmişi bildirmeden sadece işaretle
+        state["last_processed"] = data["close_time"].iloc[-1].isoformat()
+    else:
+        now = pd.Timestamp.now(tz="UTC")
+        for t, kind, text in process_events(data, state, since=pd.Timestamp(last)):
+            if now - t <= MAX_SIGNAL_AGE:
+                send_telegram(text)
+                print(f"Gönderildi ({kind}):\n{text}\n")
+        state["last_processed"] = data["close_time"].iloc[-1].isoformat()
+    state.pop("last_signal_time", None)
 
     # GitHub, 60 gün aktivite olmayan repolarda zamanlanmış işleri durdurur;
     # ayda bir state dosyasının değişmesi repoyu aktif tutar.
@@ -203,10 +249,16 @@ def check_and_notify():
 
 def show_history():
     data = combine(*fetch_data())
-    hits = data[data["new_signal"] != 0]
-    print(f"Son {len(data)} adet 15dk mumda {len(hits)} sinyal bulundu:\n")
-    for t, row in hits.iterrows():
-        print(f"{row['close_time']:%Y-%m-%d %H:%M} UTC  {_arrow(row['new_signal'])}  @ {row['Close']:.2f}")
+    events = process_events(data, {})
+    n_sig = sum(k == "SINYAL" for _, k, _ in events)
+    n_tp = sum(k == "KAPAT" for _, k, _ in events)
+    print(f"Son {len(data)} adet 15dk mumda {n_sig} sinyal, {n_tp} kâr al (+{TP_PIPS:g} pip) bulundu:\n")
+    for t, kind, text in events:
+        if kind == "SINYAL":
+            row = data[data["close_time"] == t].iloc[0]
+            print(f"{t:%Y-%m-%d %H:%M} UTC  {_arrow(row['new_signal'])}  @ {row['Close']:.2f}")
+        else:
+            print(f"{t:%Y-%m-%d %H:%M} UTC  🎯 KAPAT (+{TP_PIPS:g} pip)")
 
 
 if __name__ == "__main__":
