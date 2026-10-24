@@ -9,7 +9,8 @@
 </head>
 <body>
 <header>
-  <h1>XAUUSDT · Futures Botu (10x)</h1>
+  <h1>Futures Botu (10x) · <span id="sym">–</span></h1>
+  <select id="coin" class="btn" title="Coin seç"></select>
   <div><span class="price" id="price">–</span> <span class="muted small" id="candle"></span></div>
   <nav>
     <a href="index.html">Altın Sinyal</a>
@@ -18,7 +19,7 @@
   </nav>
   <button id="sound" class="btn">🔔 Gong sesini aç</button>
   <div class="muted small" style="margin-left:auto;text-align:right">
-    Bot verisi: <span id="source">–</span> · Son güncelleme: <span id="updated">–</span><br>
+    Bot verisi: Bitget Futures · <span id="ncoin">–</span> coin · Son güncelleme: <span id="updated">–</span><br>
     Grafik canlı Bitget verisi · bot her 5 dakikada çalışır
   </div>
 </header>
@@ -43,24 +44,32 @@
     <h2>Gösterge yönleri <span class="muted small">6 zaman dilimi · 6 gösterge</span></h2>
     <table id="f-scores"></table>
     <div id="f-result" class="result"></div>
-    <h3>Açık işlem</h3>
-    <div id="f-pos"></div>
   </section>
 
   <section class="card">
-    <h2>Geçmiş işlemler <span class="muted small" id="f-days"></span></h2>
+    <h2>Açık işlemler <span class="muted small" id="f-npos"></span></h2>
+    <div class="scroll"><table id="f-pos"></table></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Geçmiş işlemler <span class="muted small">tüm coinler · 10x</span></h2>
     <div class="stats" id="f-stats"></div>
     <div class="scroll"><table id="f-hist"></table></div>
   </section>
 
   <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
-  işlem ücreti (giriş+çıkış ≈ %1,2 ROE) ve fonlama dahil değildir. Geçmiş tablo geriye dönük hesaplanmıştır. Yatırım tavsiyesi değildir.</p>
+  işlem ücreti (giriş+çıkış ≈ %1,2 ROE) ve fonlama dahil değildir. Geçmiş tablo botun canlı açıp kapattığı işlemlerdir. Yatırım tavsiyesi değildir.</p>
 </main>
 <script src="common.js"></script>
 <script>
 const TFS = { "5dk": ["5m", 300], "15dk": ["15m", 900], "30dk": ["30m", 1800], "45dk": ["15m", 2700], "1s": ["1H", 3600], "4s": ["4H", 14400] };
 const CHECKS = ["EMA", "BOLLINGER", "RSI", "STOCHRSI", "MACD", "HACIM"];
-let tf = localStorage.getItem("futTf") || "15dk", bot = null, livePrice = null;
+let tf = localStorage.getItem("futTf") || "15dk", sym = localStorage.getItem("futSym") || "XAUUSDT", bot = null, livePrice = null, liveRows = null;
+const coinName = s => s.endsWith("USDT") ? s.slice(0, -4) : s;
+const dpOf = s => { const c = bot && bot.coins.find(c => c.s === s); return c ? c.dp : bot && bot.positions[s] ? bot.positions[s].dp : 2; };
+const fp = (v, s = sym) => fmt(v, dpOf(s));
+const roeOf = (p, price) => p.dir * (price - p.entry) / p.entry * 100 * (bot ? bot.leverage : 10);
+const priceOf = s => s === sym && livePrice ? livePrice : bot && bot.prices[s];
 
 // ---- göstergeler (Python indicators.py ile aynı formüller) ----
 const emaA = (a, p) => { const k = 2 / (p + 1); let prev = null; return a.map(v => prev = prev === null ? v : v * k + prev * (1 - k)); };
@@ -90,9 +99,10 @@ function indicators(c) {
 }
 
 async function candles() {
-  const [gran, sec] = TFS[tf];
-  const r = await fetch(`https://api.bitget.com/api/v2/mix/market/candles?symbol=XAUUSDT&productType=USDT-FUTURES&granularity=${gran}&limit=1000`);
+  const [gran] = TFS[tf];
+  const r = await fetch(`https://api.bitget.com/api/v2/mix/market/candles?symbol=${sym}&productType=USDT-FUTURES&granularity=${gran}&limit=1000`);
   const j = await r.json();
+  if (!j.data || !j.data.length) throw new Error(sym + " için mum verisi yok");
   let rows = j.data.map(x => [Math.floor(x[0] / 1000), +x[1], +x[2], +x[3], +x[4], +x[5]]).sort((a, b) => a[0] - b[0]);
   if (tf === "45dk") {  // 15dk mumlarından günün başından itibaren 45dk'lık mumlar
     const g = new Map();
@@ -140,13 +150,17 @@ function setupCharts() {
   }));
 }
 
-let lastTf = null;
+let lastView = null;
 async function renderLive() {
+  const want = sym + tf;
   const rows = await candles();
+  if (want !== sym + tf) return;  // bu arada coin/zaman dilimi değişti
   const I = indicators(rows);
   const t = i => rows[i][0] + tzOffset;
   const pts = a => a.map((v, i) => v === null || isNaN(v) ? { time: t(i) } : { time: t(i), value: v });
-  const sig = emaA(I.m, 9);
+  const sig = emaA(I.m, 9), dp = dpOf(sym), mdp = Math.min(dp + 2, 8);
+  ch.candle.applyOptions({ priceFormat: { type: "price", precision: dp, minMove: 1 / 10 ** dp } });
+  for (const s of [ch.m, ch.s, ch.hist]) s.applyOptions({ priceFormat: { type: "price", precision: mdp, minMove: 1 / 10 ** mdp } });
   ch.candle.setData(rows.map((x, i) => ({ time: t(i), open: x[1], high: x[2], low: x[3], close: x[4] })));
   ch.vol.setData(rows.map((x, i) => ({ time: t(i), value: x[5], color: x[4] >= x[1] ? "rgba(34,197,94,.35)" : "rgba(239,68,68,.35)" })));
   ch.e9.setData(pts(I.e9)); ch.e21.setData(pts(I.e21));
@@ -154,56 +168,94 @@ async function renderLive() {
   ch.r.setData(pts(I.r)); ch.k.setData(pts(I.k)); ch.d.setData(pts(I.d));
   ch.m.setData(pts(I.m)); ch.s.setData(pts(sig));
   ch.hist.setData(I.m.map((v, i) => ({ time: t(i), value: v - sig[i], color: v - sig[i] >= 0 ? "rgba(34,197,94,.6)" : "rgba(239,68,68,.6)" })));
-  if (lastTf !== tf) { ch.main.timeScale().setVisibleLogicalRange({ from: rows.length - 160, to: rows.length + 3 }); lastTf = tf; }
+  if (lastView !== want) { ch.main.timeScale().setVisibleLogicalRange({ from: rows.length - 160, to: rows.length + 3 }); lastView = want; }
+  liveRows = rows;
   livePrice = rows[rows.length - 1][4];
-  $("price").textContent = "$" + fmt(livePrice);
+  $("price").textContent = "$" + fp(livePrice);
   $("candle").textContent = "canlı · " + tf;
-  drawBot(rows);
+  drawBot();
+  if (bot) renderPositions();
 }
 
-function drawBot(rows) {
+function drawBot() {
+  const rows = liveRows;
   if (!bot || !rows) return;
   const first = rows[0][0];
   const barOf = s => { let lo = 0, hi = rows.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; rows[m][0] <= s ? lo = m : hi = m - 1; } return rows[lo][0]; };
-  ch.candle.setMarkers(bot.history.filter(e => e.kind === "SINYAL" && e.t - 300 >= first).map(e => ({
+  ch.candle.setMarkers(bot.history.filter(e => e.sym === sym && e.kind === "SINYAL" && e.t - 300 >= first).map(e => ({
     time: barOf(e.t - 300) + tzOffset, position: e.dir === 1 ? "belowBar" : "aboveBar",
     color: e.dir === 1 ? "#22c55e" : "#ef4444", shape: e.dir === 1 ? "arrowUp" : "arrowDown", text: e.dir === 1 ? "LONG" : "SHORT" })));
   ch.priceLines.forEach(l => ch.candle.removePriceLine(l)); ch.priceLines = [];
-  const p = bot.position;
+  const p = bot.positions[sym];
   if (p) for (const [v, c, n] of [[p.entry, "#f5c542", "Giriş"], [p.tp, "#22c55e", "Kâr al"], [p.sl, "#ef4444", "Zarar durdur"]])
     ch.priceLines.push(ch.candle.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, title: n }));
 }
-let liveRows = null;
 
 // ---- bot durumu ----
 const sideF = d => d === 1 ? '<span class="badge buy">LONG</span>' : '<span class="badge sell">SHORT</span>';
-function renderBot(x) {
-  bot = x;
-  $("f-scores").innerHTML = "<tr><th></th>" + Object.keys(x.scores).map(n => `<th>${n}</th>`).join("") + "</tr>" +
-    CHECKS.map(c => `<tr><td>${c}</td>` + Object.values(x.scores).map(s => `<td>${badge(s.ind[c]).replace("AL ▲", "▲").replace("SAT ▼", "▼")}</td>`).join("") + "</tr>").join("") +
-    "<tr><td><b>Puan</b></td>" + Object.values(x.scores).map(s => `<td><b class="${s.score > 0 ? "green" : s.score < 0 ? "red" : ""}">${s.score > 0 ? "+" : ""}${s.score}</b></td>`).join("") + "</tr>";
-  const r = $("f-result");
-  r.className = "result " + (x.signal === 1 ? "buy" : x.signal === -1 ? "sell" : "neutral");
-  r.textContent = x.signal === 1 ? "🟢 LONG koşulları oluştu" : x.signal === -1 ? "🔴 SHORT koşulları oluştu"
-    : `⚪ Sinyal yok · 5dk'da en az ${x.min_score_5m}/6 ve ${x.min_higher_tfs} üst zaman diliminde ${x.min_score_higher}/6 gerekli`;
-  const p = x.position, price = livePrice || x.price;
-  if (!p) $("f-pos").innerHTML = '<div class="muted">Açık işlem yok.</div>';
-  else {
-    const roe = p.dir * (price - p.entry) / p.entry * 100 * x.leverage;
-    $("f-pos").innerHTML = `<div class="pos">
-      <div><span class="muted small">Yön</span><b>${sideF(p.dir)} ${x.leverage}x</b></div>
-      <div><span class="muted small">Giriş · ${dt(Date.parse(p.time) / 1000)}</span><b>${fmt(p.entry)}</b></div>
-      <div><span class="muted small">Kâr al (+%${x.tp_roe})</span><b class="green">${fmt(p.tp)}</b></div>
-      <div><span class="muted small">Zarar durdur (-%${x.sl_roe})</span><b class="red">${fmt(p.sl)}</b></div>
-      <div><span class="muted small">Anlık kâr/zarar (${x.leverage}x)</span><b class="${roe >= 0 ? "green" : "red"}">${pct(roe)}</b></div></div>`;
+const dirOf = ch_ => ch_ === "+" ? 1 : ch_ === "-" ? -1 : 0;
+function selectCoin(s) {
+  sym = s; localStorage.setItem("futSym", s); livePrice = null; liveRows = null;
+  $("coin").value = s; $("sym").textContent = s;
+  if (bot) renderBot(bot, false);
+  live();
+}
+function renderCoins(x) {
+  const list = x.coins.map(c => c.s);
+  for (const s of Object.keys(x.positions)) if (!list.includes(s)) list.push(s);
+  if (!list.includes(sym)) list.push(sym);
+  $("coin").innerHTML = list.map((s, i) => {
+    const c = x.coins.find(c => c.s === s), p = x.positions[s];
+    const mark = p ? (p.dir === 1 ? " · 🟢 LONG açık" : " · 🔴 SHORT açık") : c && c.sig ? (c.sig === 1 ? " · LONG koşulu" : " · SHORT koşulu") : "";
+    return `<option value="${s}">${c ? (i + 1) + ". " : ""}${coinName(s)}${mark}</option>`;
+  }).join("");
+  $("coin").value = sym;
+}
+function renderScores(x) {
+  const c = x.coins.find(c => c.s === sym), tfs = x.timeframes;
+  if (!c) {
+    $("f-scores").innerHTML = "";
+    $("f-result").className = "result neutral";
+    $("f-result").textContent = `${coinName(sym)} şu an hacmi en yüksek ${x.coins.length} coin arasında değil, bot taramıyor.`;
+    return;
   }
-  $("f-days").textContent = `son ${x.days} gün · ${x.leverage}x`;
+  $("f-scores").innerHTML = "<tr><th></th>" + tfs.map(n => `<th>${n}</th>`).join("") + "</tr>" +
+    CHECKS.map((k, j) => `<tr><td>${k}</td>` + c.ind.map(s => `<td>${badge(dirOf(s[j])).replace("AL ▲", "▲").replace("SAT ▼", "▼")}</td>`).join("") + "</tr>").join("") +
+    "<tr><td><b>Puan</b></td>" + c.sc.map(v => `<td><b class="${v > 0 ? "green" : v < 0 ? "red" : ""}">${v > 0 ? "+" : ""}${v}</b></td>`).join("") + "</tr>";
+  const r = $("f-result");
+  r.className = "result " + (c.sig === 1 ? "buy" : c.sig === -1 ? "sell" : "neutral");
+  r.textContent = c.sig === 1 ? "🟢 LONG koşulları oluştu" : c.sig === -1 ? "🔴 SHORT koşulları oluştu"
+    : `⚪ Sinyal yok · 5dk'da en az ${x.min_score_5m}/6 ve ${x.min_higher_tfs} üst zaman diliminde ${x.min_score_higher}/6 gerekli`;
+}
+function renderPositions() {
+  const x = bot, ps = Object.entries(x.positions);
+  $("f-npos").textContent = `${ps.length} işlem · ${x.leverage}x`;
+  if (!ps.length) { $("f-pos").innerHTML = '<tr><td class="muted">Açık işlem yok.</td></tr>'; return; }
+  $("f-pos").innerHTML = `<tr><th>Coin</th><th>Yön</th><th>Açılış</th><th>Giriş</th><th>Kâr al (+%${x.tp_roe})</th><th>Zarar durdur (-%${x.sl_roe})</th><th>Anlık</th></tr>` +
+    ps.map(([s, p]) => {
+      const pr = priceOf(s), r = pr ? roeOf(p, pr) : null;
+      return `<tr data-s="${s}" style="cursor:pointer${s === sym ? ";background:rgba(245,197,66,.08)" : ""}"><td><b>${coinName(s)}</b></td><td>${sideF(p.dir)}</td>
+        <td>${dt(Date.parse(p.time) / 1000)}</td><td>${fp(p.entry, s)}</td><td class="green">${fp(p.tp, s)}</td><td class="red">${fp(p.sl, s)}</td>
+        <td class="${r >= 0 ? "green" : "red"}"><b>${r === null ? "–" : pct(r)}</b></td></tr>`;
+    }).join("");
+  document.querySelectorAll("#f-pos tr[data-s]").forEach(tr => tr.onclick = () => selectCoin(tr.dataset.s));
+}
+function renderBot(x, fresh = true) {
+  bot = x;
+  $("sym").textContent = sym;
+  renderCoins(x); renderScores(x); renderPositions(); drawBot();
+  const upd = new Date(Date.parse(x.updated));
+  $("updated").textContent = upd.toLocaleString("tr-TR") + ` (${Math.round((Date.now() - upd) / 60000)} dk önce)`;
+  $("ncoin").textContent = x.coins.length;
   $("f-stats").innerHTML = statsHtml(x.stats);
-  $("f-hist").innerHTML = "<tr><th>Zaman</th><th>Olay</th><th>Fiyat</th><th>Kâr/Zarar</th></tr>" + x.history.slice().reverse().map(e =>
-    e.kind === "SINYAL" ? `<tr><td>${dt(e.t)}</td><td>${e.dir === 1 ? "🟢" : "🔴"} ${sideF(e.dir)} AÇ</td><td>${fmt(e.price)}</td><td></td></tr>`
-    : `<tr><td>${dt(e.t)}</td><td>${e.pct >= 0 ? "✅" : "❌"} KAPAT</td><td>${fmt(e.entry)} → ${fmt(e.exit)}<br><span class="muted small">${e.reason}</span></td>
-       <td class="${e.pct >= 0 ? "green" : "red"}"><b>${pct(e.pct)}</b></td></tr>`).join("");
-  checkGong(x);
+  $("f-hist").innerHTML = "<tr><th>Zaman</th><th>Coin</th><th>Olay</th><th>Fiyat</th><th>Kâr/Zarar</th></tr>" + (x.history.length ? x.history.slice().reverse().map(e =>
+    `<tr data-s="${e.sym}" style="cursor:pointer"><td>${dt(e.t)}</td><td><b>${coinName(e.sym)}</b></td>` + (e.kind === "SINYAL"
+      ? `<td>${e.dir === 1 ? "🟢" : "🔴"} ${sideF(e.dir)} AÇ</td><td>${fmt(e.price, e.dp)}</td><td></td></tr>`
+      : `<td>${e.pct >= 0 ? "✅" : "❌"} KAPAT ${sideF(e.dir)}</td><td>${fmt(e.entry, e.dp)} → ${fmt(e.exit, e.dp)}<br><span class="muted small">${e.reason}</span></td>
+         <td class="${e.pct >= 0 ? "green" : "red"}"><b>${pct(e.pct)}</b></td></tr>`)).join("")
+    : '<tr><td colspan="5" class="muted">Henüz işlem yok. Bot yeni işlemleri burada listeler.</td></tr>');
+  document.querySelectorAll("#f-hist tr[data-s]").forEach(tr => tr.onclick = () => selectCoin(tr.dataset.s));
+  if (fresh) checkGong(x);
 }
 
 // ---- gong ----
@@ -223,17 +275,17 @@ function gong() {
 }
 function checkGong(x) {
   const opens = x.history.filter(e => e.kind === "SINYAL");
-  if (!opens.length) return;
-  const lastOpen = opens[opens.length - 1], seen = +localStorage.getItem("futSeen") || 0;
-  if (seen && lastOpen.t > seen) {
+  if (!opens.length) { if (!localStorage.getItem("futSeen")) localStorage.setItem("futSeen", 1); return; }
+  const seen = +localStorage.getItem("futSeen") || 0, fresh = opens.filter(e => e.t > seen);
+  if (seen && fresh.length) {
     gong();
-    const f = $("flash");
-    f.className = lastOpen.dir === 1 ? "buy" : "sell";
-    f.textContent = `${lastOpen.dir === 1 ? "🟢 YENİ LONG" : "🔴 YENİ SHORT"} işlem · ${fmt(lastOpen.price)} · ${dt(lastOpen.t)}`;
+    const f = $("flash"), e = fresh[fresh.length - 1];
+    f.className = e.dir === 1 ? "buy" : "sell";
+    f.textContent = fresh.map(e => `${e.dir === 1 ? "🟢 YENİ LONG" : "🔴 YENİ SHORT"} · ${coinName(e.sym)} @ ${fmt(e.price, e.dp)}`).join("   |   ") + ` · ${dt(e.t)}`;
     f.style.display = "block";
     setTimeout(() => f.style.display = "none", 60000);
   }
-  localStorage.setItem("futSeen", lastOpen.t);
+  localStorage.setItem("futSeen", Math.max(seen, opens[opens.length - 1].t));
 }
 $("sound").onclick = () => {
   if (audio) { audio.close(); audio = null; $("sound").textContent = "🔔 Gong sesini aç"; $("sound").classList.remove("on"); return; }
@@ -246,20 +298,21 @@ $("sound").onclick = () => {
 $("tabs").innerHTML = Object.keys(TFS).map(n => `<a data-tf="${n}">${n}</a>`).join("");
 const markTab = () => document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("active", a.dataset.tf === tf));
 document.querySelectorAll("#tabs a").forEach(a => a.onclick = () => { tf = a.dataset.tf; localStorage.setItem("futTf", tf); markTab(); live(); });
+$("coin").onchange = e => selectCoin(e.target.value);
+$("sym").textContent = sym;
 markTab();
 setupCharts();
 async function live() {
-  try { await renderLive(); } catch (e) { $("error").textContent = "Bitget canlı verisi alınamadı: " + e.message; $("error").style.display = "block"; }
+  try { await renderLive(); $("error").style.display = "none"; }
+  catch (e) { $("error").textContent = "Bitget canlı verisi alınamadı: " + e.message; $("error").style.display = "block"; }
 }
 async function botRefresh() {
   try {
     const x = await load("futures");
-    setHeader(x);
-    $("price").textContent = "$" + fmt(livePrice || x.price);
-    $("candle").textContent = "canlı · " + tf;
-    renderBot(x); live();
-    $("error").style.display = "none";
-  } catch (e) { $("error").textContent = "Bot verisi alınamadı: " + e.message; $("error").style.display = "block"; live(); }
+    if (!x.coins) throw new Error("bot verisi eski biçimde, birkaç dakika sonra yenilenecek");
+    renderBot(x);
+  } catch (e) { $("error").textContent = "Bot verisi alınamadı: " + e.message; $("error").style.display = "block"; }
+  live();
 }
 botRefresh();
 setInterval(botRefresh, 60000);

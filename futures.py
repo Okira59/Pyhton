@@ -1,23 +1,31 @@
-"""Bitget Futures XAUUSDT (altın) 10x simülasyon botu.
+"""Bitget USDT vadeli (futures) 10x simülasyon botu – hacmi en yüksek coinler.
 
+Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinleri) tarar.
 5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI, MACD ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
-onay olunca 10x LONG/SHORT işlem açılmış sayılır. Kaldıraçlı kâr %30'a ya da zarar
-%20'ye ulaşınca işlem kapatılır. Gerçek emir gönderilmez; yalnızca Telegram bildirimi.
+onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
+kâr %30'a ya da zarar %20'ye ulaşınca işlem kapatılır. 7/24 çalışır (hafta sonu dahil).
+Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
 """
 import argparse
 import json
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
+import requests
 
+import bot
 import dashboard
-from bot import _bitget, _closed_only, send_telegram, status_due
+from bot import _closed_only, send_telegram, status_due
 from indicators import bollinger, ema, macd, rsi, stoch_rsi
 
 # ---------------------------------------------------------------- AYARLAR ---
-SYMBOL = "XAUUSDT"
+TOP_N = int(os.getenv("TOP_N", "100"))
+WORKERS = 5
 TIMEFRAMES = {"5dk": 5, "15dk": 15, "30dk": 30, "45dk": 45, "1s": 60, "4s": 240}
+GRAN = {"5dk": "5m", "15dk": "15m", "30dk": "30m", "1s": "1H", "4s": "4H"}  # 45dk = 15dk'dan
 HIGHER = [n for n in TIMEFRAMES if n != "5dk"]
 EMA_FAST, EMA_SLOW = 9, 21
 BB_PERIOD, BB_STD = 20, 2.0
@@ -32,15 +40,42 @@ MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman dilim
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
 TP_ROE = float(os.getenv("TP_ROE", "30"))  # kaldıraçlı kâr % (10x'te fiyat %3)
 SL_ROE = float(os.getenv("SL_ROE", "20"))  # kaldıraçlı zarar % (10x'te fiyat %2)
-DAYS = int(os.getenv("FUTURES_DAYS", "60"))
 
 STATE_FILE = os.getenv("STATE_FILE", "futures_state.json")
 MAX_EVENT_AGE = pd.Timedelta(minutes=30)
+MAX_HISTORY = 300
 # ----------------------------------------------------------------------------
 
+API = "https://api.bitget.com/api/v2/mix/market/"
 CHECKS = ["EMA", "BOLLINGER", "RSI", "STOCHRSI", "MACD", "HACIM"]
 TF_5M = pd.Timedelta(minutes=5)
 AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
+
+
+def _get(endpoint: str, params: dict):
+    for attempt in range(6):
+        try:
+            r = requests.get(API + endpoint, params=params, timeout=15)
+        except requests.RequestException:
+            time.sleep(1 + attempt)
+            continue
+        if r.status_code == 429:
+            time.sleep(1 + attempt)
+            continue
+        r.raise_for_status()
+        time.sleep(0.1)
+        return r.json().get("data") or []
+    raise RuntimeError(f"Bitget isteği başarısız: {endpoint} {params}")
+
+
+def top_symbols(n: int = TOP_N) -> list:
+    """24s USDT hacmine göre en büyük n vadeli kontrat: [(sembol, hacim_milyon_usdt)]."""
+    d = sorted(_get("tickers", {"productType": "USDT-FUTURES"}), key=lambda x: -float(x.get("usdtVolume") or 0))
+    return [(x["symbol"], round(float(x.get("usdtVolume") or 0) / 1e6, 1)) for x in d[:n]]
+
+
+def price_places() -> dict:
+    return {c["symbol"]: int(c.get("pricePlace") or 2) for c in _get("contracts", {"productType": "USDT-FUTURES"})}
 
 
 def _resample(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
@@ -48,6 +83,25 @@ def _resample(df: pd.DataFrame, minutes: int) -> pd.DataFrame:
         return df
     origin = "epoch" if minutes == 240 else "start_day"
     return df.resample(f"{minutes}min", origin=origin).agg(AGG).dropna()
+
+
+def _candles(symbol: str, gran: str, minutes: int) -> pd.DataFrame:
+    rows = _get("candles", {"symbol": symbol, "productType": "USDT-FUTURES", "granularity": gran, "limit": 1000})
+    df = pd.DataFrame([r_[:6] for r_ in rows], columns=["ts", "Open", "High", "Low", "Close", "Volume"]).astype(float)
+    df.index = pd.to_datetime(df.pop("ts").astype("int64"), unit="ms", utc=True)
+    return _closed_only(df[~df.index.duplicated()].sort_index(), pd.Timedelta(minutes=minutes))
+
+
+def fetch_frames(symbol: str) -> dict:
+    """Canlı tarama: her zaman dilimi Bitget'ten ayrı çekilir (son 1000 mum)."""
+    fr = {n: _candles(symbol, g, TIMEFRAMES[n]) for n, g in GRAN.items()}
+    fr["45dk"] = _closed_only(_resample(fr["15dk"], 45), pd.Timedelta(minutes=45))
+    return fr
+
+
+def frames_from_5m(m5: pd.DataFrame) -> dict:
+    """Geçmiş testi: tüm zaman dilimleri 5dk mumlardan üretilir."""
+    return {n: _closed_only(_resample(m5, m), pd.Timedelta(minutes=m)) for n, m in TIMEFRAMES.items()}
 
 
 def directions(df: pd.DataFrame) -> pd.DataFrame:
@@ -75,16 +129,15 @@ def directions(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def build(m5: pd.DataFrame, min5=None, minh=None, ntf=None) -> pd.DataFrame:
+def build(frames: dict, min5=None, minh=None, ntf=None) -> pd.DataFrame:
     min5 = MIN_SCORE_5M if min5 is None else min5
     minh = MIN_SCORE_HIGHER if minh is None else minh
     ntf = MIN_HIGHER_TFS if ntf is None else ntf
-    base = m5.copy()
+    base = frames["5dk"].copy()
     base["close_time"] = base.index + TF_5M
     for name, minutes in TIMEFRAMES.items():
-        tf = pd.Timedelta(minutes=minutes)
-        s = directions(_closed_only(_resample(m5, minutes), tf)).add_suffix(f"_{name}")
-        s["close_time"] = s.index + tf
+        s = directions(frames[name]).add_suffix(f"_{name}")
+        s["close_time"] = s.index + pd.Timedelta(minutes=minutes)
         base = pd.merge_asof(base.sort_values("close_time"), s.sort_values("close_time"),
                              on="close_time", direction="backward")
     base.index = base["close_time"]
@@ -96,11 +149,6 @@ def build(m5: pd.DataFrame, min5=None, minh=None, ntf=None) -> pd.DataFrame:
     base["signal"] = sig
     base["new_signal"] = sig.where((sig != 0) & (sig != sig.shift()), 0)
     return base
-
-
-def fetch_5m(days: int = DAYS) -> pd.DataFrame:
-    df = _bitget("5m", days, SYMBOL)[["Open", "High", "Low", "Close", "Volume"]].dropna()
-    return _closed_only(df, TF_5M)
 
 
 def levels(direction: int, entry: float):
@@ -116,40 +164,38 @@ def _side(d: int) -> str:
     return "🟢 LONG" if d == 1 else "🔴 SHORT"
 
 
-def _score_lines(row: pd.Series, direction: int) -> list:
-    lines = []
-    for n in TIMEFRAMES:
-        sc = int(row[f"score_{n}"])
-        agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == direction]
-        lines.append(f"{n:<5} {sc:+d}/6  {', '.join(agree) if agree else '-'}")
-    return lines
+def _coin(sym: str) -> str:
+    return sym[:-4] if sym.endswith("USDT") else sym
 
 
-def _open_text(row: pd.Series, d: int) -> str:
+def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
     tp, sl = levels(d, row["Close"])
-    head = "🟢🟢 FUTURES – LONG AÇ 🟢🟢" if d == 1 else "🔴🔴 FUTURES – SHORT AÇ 🔴🔴"
-    return "\n".join([head, f"Bitget {SYMBOL}  |  {LEVERAGE:g}x  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
-                      f"Giriş fiyatı: {row['Close']:.2f}",
-                      f"Kâr al (+%{TP_ROE:g}): {tp:.2f}",
-                      f"Zarar durdur (-%{SL_ROE:g}): {sl:.2f}", ""] + _score_lines(row, d))
+    lines = [f"{'🟢🟢' if d == 1 else '🔴🔴'} FUTURES – {_coin(sym)} {'LONG' if d == 1 else 'SHORT'} AÇ ({LEVERAGE:g}x)",
+             f"Bitget {sym}  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
+             f"Giriş fiyatı: {row['Close']:.{dp}f}",
+             f"Kâr al (+%{TP_ROE:g}): {tp:.{dp}f}",
+             f"Zarar durdur (-%{SL_ROE:g}): {sl:.{dp}f}", ""]
+    for n in TIMEFRAMES:
+        agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == d]
+        lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/6  {', '.join(agree) if agree else '-'}")
+    return "\n".join(lines)
 
 
-def _close_text(pos: dict, row: pd.Series, exit_price: float, reason: str) -> str:
+def _close_text(sym: str, dp: int, pos: dict, row: pd.Series, exit_price: float, reason: str) -> str:
     r = roe(pos["dir"], pos["entry"], exit_price)
-    pct = r / LEVERAGE
-    return (f"{'✅' if r >= 0 else '❌'} FUTURES – İŞLEMİ KAPAT ({_side(pos['dir'])} {LEVERAGE:g}x)  |  "
-            f"{row['close_time']:%Y-%m-%d %H:%M} UTC\n"
+    return (f"{'✅' if r >= 0 else '❌'} FUTURES – {_coin(sym)} İŞLEMİ KAPAT ({_side(pos['dir'])} {LEVERAGE:g}x)\n"
+            f"Bitget {sym}  |  {row['close_time']:%Y-%m-%d %H:%M} UTC\n"
             f"Sebep: {reason}\n"
-            f"Giriş: {pos['entry']:.2f}  →  Çıkış: {exit_price:.2f}\n"
-            f"{'Kâr' if r >= 0 else 'Zarar'}: {r:+.2f}% ({LEVERAGE:g}x)  ·  fiyat {pct:+.2f}%")
+            f"Giriş: {pos['entry']:.{dp}f}  →  Çıkış: {exit_price:.{dp}f}\n"
+            f"{'Kâr' if r >= 0 else 'Zarar'}: {r:+.2f}% ({LEVERAGE:g}x)  ·  fiyat {r / LEVERAGE:+.2f}%")
 
 
-def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
-    """Mumları sırayla işler; tek seferde tek işlem. (zaman, tür, mesaj, bilgi) listesi döner."""
+def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None) -> list:
+    """Bir coinin mumlarını sırayla işler (coin başına tek işlem). (zaman, tür, mesaj, bilgi) listesi döner."""
     events = []
     rows = data if since is None else data[data["close_time"] > since]
     for _, row in rows.iterrows():
-        pos = state.get("position")
+        pos = cs.get("position")
         if pos and row["close_time"] > pd.Timestamp(pos["time"]):
             tp, sl = pos["tp"], pos["sl"]
             stopped = row["Low"] <= sl if pos["dir"] == 1 else row["High"] >= sl
@@ -160,113 +206,151 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
             elif hit:
                 exit_price, reason = tp, f"+%{TP_ROE:g} kâr hedefine ulaşıldı"
             if exit_price is not None:
-                events.append((row["close_time"], "KAPAT", _close_text(pos, row, exit_price, reason),
-                               {"dir": pos["dir"], "entry": round(pos["entry"], 2), "exit": round(exit_price, 2),
+                events.append((row["close_time"], "KAPAT", _close_text(sym, dp, pos, row, exit_price, reason),
+                               {"sym": sym, "dp": dp, "dir": pos["dir"], "entry": pos["entry"], "exit": exit_price,
                                 "pct": round(roe(pos["dir"], pos["entry"], exit_price), 2), "reason": reason}))
-                state["position"] = pos = None
+                cs["position"] = pos = None
         sig = int(row["new_signal"])
         if sig != 0 and not pos:
             entry = float(row["Close"])
             tp, sl = levels(sig, entry)
-            events.append((row["close_time"], "SINYAL", _open_text(row, sig), {"dir": sig, "price": round(entry, 2)}))
-            state["position"] = {"dir": sig, "entry": entry, "tp": tp, "sl": sl,
-                                 "time": row["close_time"].isoformat()}
+            events.append((row["close_time"], "SINYAL", _open_text(sym, dp, row, sig),
+                           {"sym": sym, "dp": dp, "dir": sig, "price": entry}))
+            cs["position"] = {"dir": sig, "entry": entry, "tp": tp, "sl": sl, "dp": dp,
+                              "time": row["close_time"].isoformat()}
     return events
 
 
-def _status_text(row: pd.Series, pos) -> str:
-    lines = ["🕐 SAATLİK DURUM – Futures", f"Bitget {SYMBOL}  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
-             f"Fiyat: {row['Close']:.2f}", "", "Puan (+6 = güçlü LONG, -6 = güçlü SHORT):"]
-    lines += [f"{n:<5} {int(row[f'score_{n}']):+d}/6" for n in TIMEFRAMES]
-    lines.append("")
-    if pos:
-        r = roe(pos["dir"], pos["entry"], float(row["Close"]))
-        lines.append(f"Açık işlem: {_side(pos['dir'])} {LEVERAGE:g}x @ {pos['entry']:.2f}\n"
-                     f"Anlık {'kâr' if r >= 0 else 'zarar'}: {r:+.2f}%")
-    else:
-        lines.append("Açık işlem: yok")
-    return "\n".join(lines)
+def _scan_one(sym: str):
+    try:
+        return build(fetch_frames(sym))
+    except Exception as e:  # yeni listelenen/az verili coinleri atla
+        print(f"{sym}: atlandı ({e})")
+        return None
 
 
 def _load_state() -> dict:
     try:
         with open(STATE_FILE) as f:
-            return json.load(f)
+            st = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        st = {}
+    st.setdefault("positions", {})
+    st.setdefault("last", {})
+    st.setdefault("history", [])
+    return st
+
+
+def _status_text(results: dict, state: dict) -> str:
+    pos = state["positions"]
+    lines = ["🕐 SAATLİK DURUM – Futures", f"Taranan coin: {len(results)}  |  açık işlem: {len(pos)}", ""]
+    for sym, p in list(pos.items())[:40]:
+        data = results.get(sym)
+        if data is None:
+            continue
+        r = roe(p["dir"], p["entry"], float(data["Close"].iloc[-1]))
+        lines.append(f"{_side(p['dir'])} {_coin(sym):<8} {r:+.1f}%")
+    if not pos:
+        lines.append("Açık işlem yok.")
+    return "\n".join(lines)
 
 
 def check_and_notify(send: bool = True):
     state = _load_state()
-    data = build(fetch_5m())
-    last = data.iloc[-1]
-    print(f"Son 5dk mum: {last['close_time']:%Y-%m-%d %H:%M} UTC  fiyat {last['Close']:.2f}")
-    for n in TIMEFRAMES:
-        print(f"  {n:<5} puan {int(last[f'score_{n}']):+d}/6")
+    top = top_symbols()
+    places = price_places()
+    symbols = [s for s, _ in top] + [s for s in state["positions"] if s not in dict(top)]
+    with ThreadPoolExecutor(WORKERS) as ex:
+        results = {s: d for s, d in zip(symbols, ex.map(_scan_one, symbols)) if d is not None and len(d)}
+    print(f"{len(results)}/{len(symbols)} coin tarandı.")
 
-    since = state.get("last_processed")
-    if since is not None:
-        now = pd.Timestamp.now(tz="UTC")
-        for t, _, text, _ in process_events(data, state, since=pd.Timestamp(since)):
-            print(f"\n{text}")
-            if send and now - t <= MAX_EVENT_AGE:
-                send_telegram(text)
-    state["last_processed"] = last["close_time"].isoformat()
-    if send and status_due(state, last["close_time"]):
-        send_telegram(_status_text(last, state.get("position")))
+    now = pd.Timestamp.now(tz="UTC")
+    for sym, data in results.items():
+        dp = places.get(sym, 2)
+        last_t = data["close_time"].iloc[-1]
+        since = state["last"].get(sym)
+        if since is not None:
+            cs = {"position": state["positions"].get(sym)}
+            for t, kind, text, info in process_events(sym, dp, data, cs, since=pd.Timestamp(since)):
+                print(f"\n{text}")
+                state["history"].append({"t": dashboard.ts(t), "kind": kind, **info})
+                if send and now - t <= MAX_EVENT_AGE:
+                    send_telegram(text)
+            if cs["position"]:
+                state["positions"][sym] = cs["position"]
+            else:
+                state["positions"].pop(sym, None)
+        state["last"][sym] = last_t.isoformat()
+    state["history"] = state["history"][-MAX_HISTORY:]
+    ref = results.get("BTCUSDT")
+    if send and ref is not None and status_due(state, ref["close_time"].iloc[-1]):
+        send_telegram(_status_text(results, state))
     with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+        json.dump(state, f, indent=1)
     try:
-        export_dashboard(data, state)
+        export_dashboard(results, top, places, state)
     except Exception as e:  # panel hatası bildirimleri engellemesin
         print(f"Panel verisi yazılamadı: {e}")
 
 
-def export_dashboard(data: pd.DataFrame, state: dict):
-    last = data.iloc[-1]
-    history = dashboard.events_to_list(process_events(data, {}))
+def export_dashboard(results: dict, top: list, places: dict, state: dict):
+    ch = lambda v: "+" if v > 0 else "-" if v < 0 else "0"
+    coins = []
+    for sym, vol in top:
+        data = results.get(sym)
+        if data is None:
+            continue
+        last = data.iloc[-1]
+        coins.append({"s": sym, "p": float(last["Close"]), "dp": places.get(sym, 2), "vol": vol,
+                      "sig": int(last["signal"]), "t": dashboard.ts(last["close_time"]),
+                      "sc": [int(last[f"score_{n}"]) for n in TIMEFRAMES],
+                      "ind": ["".join(ch(int(last[f"{c}_{n}"])) for c in CHECKS) for n in TIMEFRAMES]})
+    prices = {s: float(d["Close"].iloc[-1]) for s, d in results.items()}
     dashboard.write("futures", {
-        "symbol": SYMBOL,
         "source": "Bitget Futures",
-        "close_time": dashboard.ts(last["close_time"]),
-        "price": round(float(last["Close"]), 2),
-        "scores": {n: {"score": int(last[f"score_{n}"]),
-                       "ind": {c: int(last[f"{c}_{n}"]) for c in CHECKS}} for n in TIMEFRAMES},
-        "signal": int(last["signal"]),
+        "timeframes": list(TIMEFRAMES),
+        "checks": CHECKS,
+        "coins": coins,
+        "prices": prices,
         "min_score_5m": MIN_SCORE_5M,
         "min_score_higher": MIN_SCORE_HIGHER,
         "min_higher_tfs": MIN_HIGHER_TFS,
         "leverage": LEVERAGE,
         "tp_roe": TP_ROE,
         "sl_roe": SL_ROE,
-        "position": state.get("position"),
-        "history": history,
-        "stats": dashboard.stats(history),
-        "days": DAYS,
+        "positions": state["positions"],
+        "history": state["history"],
+        "stats": dashboard.stats(state["history"]),
     })
 
 
-def show_history():
-    data = build(fetch_5m())
-    events = process_events(data, {})
+def show_history(sym: str, days: int):
+    bot.SKIP_WEEKEND = False
+    m5 = bot._bitget("5m", days, sym)[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    data = build(frames_from_5m(_closed_only(m5, TF_5M)))
+    events = process_events(sym, 4, data, {})
     for t, kind, _, info in events:
         if kind == "SINYAL":
-            print(f"{t:%m-%d %H:%M}  {_side(info['dir'])} @ {info['price']:.2f}")
+            print(f"{t:%m-%d %H:%M}  {_side(info['dir'])} @ {info['price']:g}")
         else:
             print(f"{t:%m-%d %H:%M}  {'✅' if info['pct'] >= 0 else '❌'} KAPAT {info['pct']:+.2f}% ({info['reason']})")
     s = dashboard.stats(dashboard.events_to_list(events))
-    print(f"\n{s['closed']} kapanan işlem: {s['wins']} kârlı, {s['losses']} zararlı, toplam {s['total_pct']:+.2f}% ({LEVERAGE:g}x)")
+    print(f"\n{sym}: {s['closed']} kapanan işlem, {s['wins']} kârlı, {s['losses']} zararlı, "
+          f"toplam {s['total_pct']:+.2f}% ({LEVERAGE:g}x)")
+    return s
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Bitget Futures XAUUSDT 10x sinyal botu (simülasyon)")
+    p = argparse.ArgumentParser(description="Bitget Futures 10x sinyal botu (simülasyon, en hacimli coinler)")
     p.add_argument("--notify", action="store_true", help="Yeni olayları Telegram'a gönder")
     p.add_argument("--test", action="store_true", help="Telegram'a deneme mesajı gönder")
-    p.add_argument("--history", action="store_true", help="Geçmiş işlemleri listele")
+    p.add_argument("--history", metavar="SEMBOL", help="Bir coinin geçmiş testini göster (ör. BTCUSDT)")
+    p.add_argument("--days", type=int, default=60)
     args = p.parse_args()
     if args.test:
-        send_telegram("✅ Futures botu bağlandı. Bu bir deneme mesajıdır.\n🟢 = LONG   🔴 = SHORT  (10x, simülasyon)")
+        send_telegram(f"✅ Futures botu bağlandı. Hacmi en yüksek {TOP_N} coin 7/24 taranıyor.\n"
+                      "🟢 = LONG   🔴 = SHORT  (10x, simülasyon)")
     if args.history:
-        show_history()
+        show_history(args.history, args.days)
     else:
         check_and_notify(send=args.notify)
