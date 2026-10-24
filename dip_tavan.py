@@ -232,6 +232,7 @@ def export_dashboard(data: pd.DataFrame, state: dict):
         "history": history,
         "stats": dashboard.stats(history),
         "candles": dashboard.candles(data, data.index - TF_15M),
+        "osc": dashboard.oscillators(data["Close"], data.index - TF_15M),
     })
 
 

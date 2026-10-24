@@ -65,7 +65,7 @@ function setHeader(x) {
   $("source").textContent = `${x.source || "Bitget"} ${x.symbol}`;
 }
 
-let chart, series, priceLines = [];
+let chart, series, priceLines = [], osc;
 
 // Mum grafiği + sinyal okları; sl verilirse açık işlemin giriş/kâr al/zarar durdur çizgileri
 function renderChart(x, sl) {
@@ -82,6 +82,7 @@ function renderChart(x, sl) {
     });
   }
   const candles = x.candles;
+  renderOsc(x.osc || []);
   series.setData(candles.map(c => ({ time: c[0] + tzOffset, open: c[1], high: c[2], low: c[3], close: c[4] })));
   const first = candles.length ? candles[0][0] : 0;
   series.setMarkers(x.history.filter(e => e.kind === "SINYAL" && e.t >= first).map(e => ({
@@ -113,4 +114,43 @@ function startPage(name, render) {
   }
   refresh();
   setInterval(refresh, 60000);
+}
+
+const chartOpts = extra => Object.assign({
+  autoSize: true,
+  layout: { background: { color: "#171b23" }, textColor: "#c9cedb" },
+  grid: { vertLines: { color: "#20252f" }, horzLines: { color: "#20252f" } },
+  timeScale: { timeVisible: true, secondsVisible: false },
+  rightPriceScale: { borderColor: "#262c38", minimumWidth: 70 },
+}, extra);
+
+// Fiyat grafiğinin altında StochRSI ve MACD panelleri (zaman ekseni fiyat grafiğiyle senkron)
+function renderOsc(rows) {
+  if (!osc) {
+    chart.applyOptions({ rightPriceScale: { minimumWidth: 70 } });
+    const st = LightweightCharts.createChart($("stoch"), chartOpts());
+    const mc = LightweightCharts.createChart($("macd"), chartOpts());
+    const line = (c, color) => c.addLineSeries({ color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: true });
+    osc = { st, mc, k: line(st, "#3b82f6"), d: line(st, "#f59e0b"),
+            hist: mc.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false }),
+            m: line(mc, "#3b82f6"), s: line(mc, "#f59e0b") };
+    for (const [v, c] of [[80, "#ef4444"], [20, "#22c55e"]])
+      osc.k.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
+    osc.k.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
+    const charts = [chart, st, mc];
+    let syncing = false;
+    charts.forEach(src => src.timeScale().subscribeVisibleLogicalRangeChange(r => {
+      if (syncing || !r) return;
+      syncing = true;
+      charts.forEach(c => c !== src && c.timeScale().setVisibleLogicalRange(r));
+      syncing = false;
+    }));
+  }
+  const pts = i => rows.map(r => r[i] === null ? { time: r[0] + tzOffset } : { time: r[0] + tzOffset, value: r[i] });
+  osc.k.setData(pts(4));
+  osc.d.setData(pts(5));
+  osc.m.setData(pts(1));
+  osc.s.setData(pts(2));
+  osc.hist.setData(rows.map(r => r[3] === null ? { time: r[0] + tzOffset }
+    : { time: r[0] + tzOffset, value: r[3], color: r[3] >= 0 ? "rgba(34,197,94,.6)" : "rgba(239,68,68,.6)" }));
 }
