@@ -42,3 +42,14 @@
   .green { color: var(--green); } .red { color: var(--red); }
   #error { display: none; background: rgba(239,68,68,.15); color: var(--red); padding: 10px 24px; }
   @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  .osc { height: 140px; }
+  .tabs { display: inline-flex; gap: 4px; margin-left: 12px; }
+  .tabs a { cursor: pointer; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 6px;
+            border: 1px solid var(--line); color: var(--muted); }
+  .tabs a.active { color: var(--gold); border-color: var(--gold); }
+  .btn { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 6px;
+         padding: 6px 12px; cursor: pointer; font: inherit; }
+  .btn.on { color: var(--green); border-color: var(--green); }
+  #flash { display: none; font-size: 20px; font-weight: 700; text-align: center; padding: 12px; }
+  #f-scores td, #f-scores th { text-align: center; padding: 5px 4px; }
+  #f-scores td:first-child { text-align: left; }

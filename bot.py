@@ -47,7 +47,7 @@ TF_4H = pd.Timedelta(hours=4)
 
 
 _BITGET_URL = "https://api.bitget.com/api/v2/mix/market/history-candles"
-_BITGET_GRAN = {"15m": ("15m", 15), "1h": ("1H", 60)}
+_BITGET_GRAN = {"5m": ("5m", 5), "15m": ("15m", 15), "1h": ("1H", 60)}
 _TRADFI_URL = "https://www.bitget.com/v1/kline/getMoreKlineDataV2"
 _TRADFI_BID = "5"  # Bitget TradFi grafiğindeki varsayılan fiyat tipi (bid)
 

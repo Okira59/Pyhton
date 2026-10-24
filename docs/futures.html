@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Futures Botu</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>XAUUSDT · Futures Botu (10x)</h1>
+  <div><span class="price" id="price">–</span> <span class="muted small" id="candle"></span></div>
+  <nav>
+    <a href="index.html">Altın Sinyal</a>
+    <a href="dip-tavan.html">Dip-Tavan</a>
+    <a href="futures.html" class="active">Futures</a>
+  </nav>
+  <button id="sound" class="btn">🔔 Gong sesini aç</button>
+  <div class="muted small" style="margin-left:auto;text-align:right">
+    Bot verisi: <span id="source">–</span> · Son güncelleme: <span id="updated">–</span><br>
+    Grafik canlı Bitget verisi · bot her 5 dakikada çalışır
+  </div>
+</header>
+<div id="error"></div>
+<div id="flash"></div>
+<main>
+  <section class="card wide">
+    <h2><span>Grafik <span class="tabs" id="tabs"></span></span>
+      <span class="muted small">
+        <span style="color:#3b82f6">EMA 9</span> · <span style="color:#f59e0b">EMA 21</span> ·
+        <span style="color:#a78bfa">Bollinger (20,2)</span> · Hacim · ▲ LONG · ▼ SHORT</span></h2>
+    <div id="chart"></div>
+    <div class="osc-title">RSI (14) · 30 / 50 / 70</div>
+    <div id="rsi" class="osc"></div>
+    <div class="osc-title">StochRSI (14,14,3,3) · <span style="color:#3b82f6">%K</span> · <span style="color:#f59e0b">%D</span> · 20 / 80</div>
+    <div id="stoch" class="osc"></div>
+    <div class="osc-title">MACD (12,26,9) · <span style="color:#3b82f6">MACD</span> · <span style="color:#f59e0b">Sinyal</span> · histogram</div>
+    <div id="macd" class="osc"></div>
+  </section>
+
+  <section class="card">
+    <h2>Gösterge yönleri <span class="muted small">6 zaman dilimi · 6 gösterge</span></h2>
+    <table id="f-scores"></table>
+    <div id="f-result" class="result"></div>
+    <h3>Açık işlem</h3>
+    <div id="f-pos"></div>
+  </section>
+
+  <section class="card">
+    <h2>Geçmiş işlemler <span class="muted small" id="f-days"></span></h2>
+    <div class="stats" id="f-stats"></div>
+    <div class="scroll"><table id="f-hist"></table></div>
+  </section>
+
+  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
+  işlem ücreti (giriş+çıkış ≈ %1,2 ROE) ve fonlama dahil değildir. Geçmiş tablo geriye dönük hesaplanmıştır. Yatırım tavsiyesi değildir.</p>
+</main>
+<script src="common.js"></script>
+<script>
+const TFS = { "5dk": ["5m", 300], "15dk": ["15m", 900], "30dk": ["30m", 1800], "45dk": ["15m", 2700], "1s": ["1H", 3600], "4s": ["4H", 14400] };
+const CHECKS = ["EMA", "BOLLINGER", "RSI", "STOCHRSI", "MACD", "HACIM"];
+let tf = localStorage.getItem("futTf") || "15dk", bot = null, livePrice = null;
+
+// ---- göstergeler (Python indicators.py ile aynı formüller) ----
+const emaA = (a, p) => { const k = 2 / (p + 1); let prev = null; return a.map(v => prev = prev === null ? v : v * k + prev * (1 - k)); };
+const roll = (a, p, fn) => a.map((_, i) => { if (i < p - 1) return null; const w = a.slice(i - p + 1, i + 1); return w.some(v => v === null) ? null : fn(w); });
+const mean = w => w.reduce((s, v) => s + v, 0) / w.length;
+const std = w => { const m = mean(w); return Math.sqrt(mean(w.map(v => (v - m) ** 2))); };
+function rsiA(c, p = 14) {
+  const out = [null]; let g = null, l = null;
+  for (let i = 1; i < c.length; i++) {
+    const d = c[i] - c[i - 1], up = Math.max(d, 0), dn = Math.max(-d, 0);
+    g = g === null ? up : g + (up - g) / p; l = l === null ? dn : l + (dn - l) / p;
+    out.push(l === 0 ? 100 : 100 - 100 / (1 + g / l));
+  }
+  return out;
+}
+function indicators(c) {
+  const close = c.map(x => x[4]);
+  const e9 = emaA(close, 9), e21 = emaA(close, 21);
+  const mid = roll(close, 20, mean), sd = roll(close, 20, std);
+  const up = mid.map((m, i) => m === null ? null : m + 2 * sd[i]), lo = mid.map((m, i) => m === null ? null : m - 2 * sd[i]);
+  const r = rsiA(close);
+  const rmin = roll(r, 14, w => Math.min(...w)), rmax = roll(r, 14, w => Math.max(...w));
+  const st = r.map((v, i) => rmin[i] === null ? null : (v - rmin[i]) / (rmax[i] - rmin[i]) * 100);
+  const k = roll(st, 3, mean), d = roll(k, 3, mean);
+  const m = emaA(close, 12).map((v, i) => v - emaA(close, 26)[i]);
+  return { e9, e21, mid, up, lo, r, k, d, m };
+}
+
+async function candles() {
+  const [gran, sec] = TFS[tf];
+  const r = await fetch(`https://api.bitget.com/api/v2/mix/market/candles?symbol=XAUUSDT&productType=USDT-FUTURES&granularity=${gran}&limit=1000`);
+  const j = await r.json();
+  let rows = j.data.map(x => [Math.floor(x[0] / 1000), +x[1], +x[2], +x[3], +x[4], +x[5]]).sort((a, b) => a[0] - b[0]);
+  if (tf === "45dk") {  // 15dk mumlarından günün başından itibaren 45dk'lık mumlar
+    const g = new Map();
+    for (const x of rows) {
+      const day = x[0] - x[0] % 86400, t = day + Math.floor((x[0] - day) / 2700) * 2700;
+      const b = g.get(t);
+      if (!b) g.set(t, [t, x[1], x[2], x[3], x[4], x[5]]);
+      else { b[2] = Math.max(b[2], x[2]); b[3] = Math.min(b[3], x[3]); b[4] = x[4]; b[5] += x[5]; }
+    }
+    rows = [...g.values()];
+  }
+  return rows;
+}
+
+// ---- grafikler ----
+let ch;
+function setupCharts() {
+  const main = LightweightCharts.createChart($("chart"), chartOpts());
+  const mk = id => LightweightCharts.createChart($(id), chartOpts());
+  const rs = mk("rsi"), st = mk("stoch"), mc = mk("macd");
+  const line = (c, color, w = 1.5, extra = {}) => c.addLineSeries(Object.assign({ color, lineWidth: w, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, extra));
+  ch = {
+    main, rs, st, mc, priceLines: [],
+    candle: main.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444", borderVisible: false }),
+    vol: main.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false }),
+    e9: line(main, "#3b82f6"), e21: line(main, "#f59e0b"),
+    bu: line(main, "#a78bfa", 1), bm: line(main, "#a78bfa", 1, { lineStyle: 2 }), bl: line(main, "#a78bfa", 1),
+    r: line(rs, "#e879f9", 1.5, { lastValueVisible: true }),
+    k: line(st, "#3b82f6", 1.5, { lastValueVisible: true }), d: line(st, "#f59e0b", 1.5, { lastValueVisible: true }),
+    hist: mc.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false }),
+    m: line(mc, "#3b82f6", 1.5, { lastValueVisible: true }), s: line(mc, "#f59e0b", 1.5, { lastValueVisible: true }),
+  };
+  main.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  const fixed = (s, lo, hi, lines) => {
+    s.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: lo, maxValue: hi } }) });
+    for (const [v, c] of lines) s.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
+  };
+  fixed(ch.r, 0, 100, [[70, "#ef4444"], [50, "#4b5563"], [30, "#22c55e"]]);
+  fixed(ch.k, 0, 100, [[80, "#ef4444"], [20, "#22c55e"]]);
+  const all = [main, rs, st, mc];
+  let syncing = false;
+  all.forEach(src => src.timeScale().subscribeVisibleLogicalRangeChange(r => {
+    if (syncing || !r) return;
+    syncing = true; all.forEach(c => c !== src && c.timeScale().setVisibleLogicalRange(r)); syncing = false;
+  }));
+}
+
+let lastTf = null;
+async function renderLive() {
+  const rows = await candles();
+  const I = indicators(rows);
+  const t = i => rows[i][0] + tzOffset;
+  const pts = a => a.map((v, i) => v === null || isNaN(v) ? { time: t(i) } : { time: t(i), value: v });
+  const sig = emaA(I.m, 9);
+  ch.candle.setData(rows.map((x, i) => ({ time: t(i), open: x[1], high: x[2], low: x[3], close: x[4] })));
+  ch.vol.setData(rows.map((x, i) => ({ time: t(i), value: x[5], color: x[4] >= x[1] ? "rgba(34,197,94,.35)" : "rgba(239,68,68,.35)" })));
+  ch.e9.setData(pts(I.e9)); ch.e21.setData(pts(I.e21));
+  ch.bu.setData(pts(I.up)); ch.bm.setData(pts(I.mid)); ch.bl.setData(pts(I.lo));
+  ch.r.setData(pts(I.r)); ch.k.setData(pts(I.k)); ch.d.setData(pts(I.d));
+  ch.m.setData(pts(I.m)); ch.s.setData(pts(sig));
+  ch.hist.setData(I.m.map((v, i) => ({ time: t(i), value: v - sig[i], color: v - sig[i] >= 0 ? "rgba(34,197,94,.6)" : "rgba(239,68,68,.6)" })));
+  if (lastTf !== tf) { ch.main.timeScale().setVisibleLogicalRange({ from: rows.length - 160, to: rows.length + 3 }); lastTf = tf; }
+  livePrice = rows[rows.length - 1][4];
+  $("price").textContent = "$" + fmt(livePrice);
+  $("candle").textContent = "canlı · " + tf;
+  drawBot(rows);
+}
+
+function drawBot(rows) {
+  if (!bot || !rows) return;
+  const first = rows[0][0];
+  const barOf = s => { let lo = 0, hi = rows.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; rows[m][0] <= s ? lo = m : hi = m - 1; } return rows[lo][0]; };
+  ch.candle.setMarkers(bot.history.filter(e => e.kind === "SINYAL" && e.t - 300 >= first).map(e => ({
+    time: barOf(e.t - 300) + tzOffset, position: e.dir === 1 ? "belowBar" : "aboveBar",
+    color: e.dir === 1 ? "#22c55e" : "#ef4444", shape: e.dir === 1 ? "arrowUp" : "arrowDown", text: e.dir === 1 ? "LONG" : "SHORT" })));
+  ch.priceLines.forEach(l => ch.candle.removePriceLine(l)); ch.priceLines = [];
+  const p = bot.position;
+  if (p) for (const [v, c, n] of [[p.entry, "#f5c542", "Giriş"], [p.tp, "#22c55e", "Kâr al"], [p.sl, "#ef4444", "Zarar durdur"]])
+    ch.priceLines.push(ch.candle.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, title: n }));
+}
+let liveRows = null;
+
+// ---- bot durumu ----
+const sideF = d => d === 1 ? '<span class="badge buy">LONG</span>' : '<span class="badge sell">SHORT</span>';
+function renderBot(x) {
+  bot = x;
+  $("f-scores").innerHTML = "<tr><th></th>" + Object.keys(x.scores).map(n => `<th>${n}</th>`).join("") + "</tr>" +
+    CHECKS.map(c => `<tr><td>${c}</td>` + Object.values(x.scores).map(s => `<td>${badge(s.ind[c]).replace("AL ▲", "▲").replace("SAT ▼", "▼")}</td>`).join("") + "</tr>").join("") +
+    "<tr><td><b>Puan</b></td>" + Object.values(x.scores).map(s => `<td><b class="${s.score > 0 ? "green" : s.score < 0 ? "red" : ""}">${s.score > 0 ? "+" : ""}${s.score}</b></td>`).join("") + "</tr>";
+  const r = $("f-result");
+  r.className = "result " + (x.signal === 1 ? "buy" : x.signal === -1 ? "sell" : "neutral");
+  r.textContent = x.signal === 1 ? "🟢 LONG koşulları oluştu" : x.signal === -1 ? "🔴 SHORT koşulları oluştu"
+    : `⚪ Sinyal yok · 5dk'da en az ${x.min_score_5m}/6 ve ${x.min_higher_tfs} üst zaman diliminde ${x.min_score_higher}/6 gerekli`;
+  const p = x.position, price = livePrice || x.price;
+  if (!p) $("f-pos").innerHTML = '<div class="muted">Açık işlem yok.</div>';
+  else {
+    const roe = p.dir * (price - p.entry) / p.entry * 100 * x.leverage;
+    $("f-pos").innerHTML = `<div class="pos">
+      <div><span class="muted small">Yön</span><b>${sideF(p.dir)} ${x.leverage}x</b></div>
+      <div><span class="muted small">Giriş · ${dt(Date.parse(p.time) / 1000)}</span><b>${fmt(p.entry)}</b></div>
+      <div><span class="muted small">Kâr al (+%${x.tp_roe})</span><b class="green">${fmt(p.tp)}</b></div>
+      <div><span class="muted small">Zarar durdur (-%${x.sl_roe})</span><b class="red">${fmt(p.sl)}</b></div>
+      <div><span class="muted small">Anlık kâr/zarar (${x.leverage}x)</span><b class="${roe >= 0 ? "green" : "red"}">${pct(roe)}</b></div></div>`;
+  }
+  $("f-days").textContent = `son ${x.days} gün · ${x.leverage}x`;
+  $("f-stats").innerHTML = statsHtml(x.stats);
+  $("f-hist").innerHTML = "<tr><th>Zaman</th><th>Olay</th><th>Fiyat</th><th>Kâr/Zarar</th></tr>" + x.history.slice().reverse().map(e =>
+    e.kind === "SINYAL" ? `<tr><td>${dt(e.t)}</td><td>${e.dir === 1 ? "🟢" : "🔴"} ${sideF(e.dir)} AÇ</td><td>${fmt(e.price)}</td><td></td></tr>`
+    : `<tr><td>${dt(e.t)}</td><td>${e.pct >= 0 ? "✅" : "❌"} KAPAT</td><td>${fmt(e.entry)} → ${fmt(e.exit)}<br><span class="muted small">${e.reason}</span></td>
+       <td class="${e.pct >= 0 ? "green" : "red"}"><b>${pct(e.pct)}</b></td></tr>`).join("");
+  checkGong(x);
+}
+
+// ---- gong ----
+let audio = null;
+function gong() {
+  if (!audio) return;
+  const now = audio.currentTime, out = audio.createGain();
+  out.connect(audio.destination);
+  out.gain.setValueAtTime(0.0001, now);
+  out.gain.exponentialRampToValueAtTime(0.9, now + 0.02);
+  out.gain.exponentialRampToValueAtTime(0.0001, now + 5);
+  for (const [f, a] of [[110, 1], [164, .6], [221, .5], [298, .35], [403, .25], [557, .15]]) {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(f * 1.02, now); o.frequency.exponentialRampToValueAtTime(f, now + 1.5);
+    g.gain.value = a; o.connect(g); g.connect(out); o.start(now); o.stop(now + 5);
+  }
+}
+function checkGong(x) {
+  const opens = x.history.filter(e => e.kind === "SINYAL");
+  if (!opens.length) return;
+  const lastOpen = opens[opens.length - 1], seen = +localStorage.getItem("futSeen") || 0;
+  if (seen && lastOpen.t > seen) {
+    gong();
+    const f = $("flash");
+    f.className = lastOpen.dir === 1 ? "buy" : "sell";
+    f.textContent = `${lastOpen.dir === 1 ? "🟢 YENİ LONG" : "🔴 YENİ SHORT"} işlem · ${fmt(lastOpen.price)} · ${dt(lastOpen.t)}`;
+    f.style.display = "block";
+    setTimeout(() => f.style.display = "none", 60000);
+  }
+  localStorage.setItem("futSeen", lastOpen.t);
+}
+$("sound").onclick = () => {
+  if (audio) { audio.close(); audio = null; $("sound").textContent = "🔔 Gong sesini aç"; $("sound").classList.remove("on"); return; }
+  audio = new (window.AudioContext || window.webkitAudioContext)();
+  $("sound").textContent = "🔔 Gong açık"; $("sound").classList.add("on");
+  gong();
+};
+
+// ---- başlat ----
+$("tabs").innerHTML = Object.keys(TFS).map(n => `<a data-tf="${n}">${n}</a>`).join("");
+const markTab = () => document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("active", a.dataset.tf === tf));
+document.querySelectorAll("#tabs a").forEach(a => a.onclick = () => { tf = a.dataset.tf; localStorage.setItem("futTf", tf); markTab(); live(); });
+markTab();
+setupCharts();
+async function live() {
+  try { await renderLive(); } catch (e) { $("error").textContent = "Bitget canlı verisi alınamadı: " + e.message; $("error").style.display = "block"; }
+}
+async function botRefresh() {
+  try {
+    const x = await load("futures");
+    setHeader(x);
+    $("price").textContent = "$" + fmt(livePrice || x.price);
+    $("candle").textContent = "canlı · " + tf;
+    renderBot(x); live();
+    $("error").style.display = "none";
+  } catch (e) { $("error").textContent = "Bot verisi alınamadı: " + e.message; $("error").style.display = "block"; live(); }
+}
+botRefresh();
+setInterval(botRefresh, 60000);
+setInterval(live, 15000);
+</script>
+</body>
+</html>
