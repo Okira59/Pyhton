@@ -57,7 +57,7 @@
     <div class="scroll"><table id="f-hist"></table></div>
   </section>
 
-  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
+  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Her işlem isolated $20 teminat (10x = $200 pozisyon) ile açılır, aynı anda en fazla 3 işlem açık olur; 3 işlem açıkken gelen sinyaller sadece Telegram'a bildirilir. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
   işlem ücreti (giriş+çıkış ≈ %1,2 ROE) ve fonlama dahil değildir. Geçmiş tablo botun canlı açıp kapattığı işlemlerdir. Yatırım tavsiyesi değildir.</p>
 </main>
 <script src="common.js"></script>
@@ -68,6 +68,7 @@ let tf = localStorage.getItem("futTf") || "15dk", sym = localStorage.getItem("fu
 const coinName = s => s.endsWith("USDT") ? s.slice(0, -4) : s;
 const dpOf = s => { const c = bot && bot.coins.find(c => c.s === s); return c ? c.dp : bot && bot.positions[s] ? bot.positions[s].dp : 2; };
 const fp = (v, s = sym) => fmt(v, dpOf(s));
+const usdF = (r, p) => { const v = (p && p.margin || (bot ? bot.margin_usd : 20)) * r / 100; return (v >= 0 ? "+$" : "-$") + fmt(Math.abs(v), 2); };
 const roeOf = (p, price) => p.dir * (price - p.entry) / p.entry * 100 * (bot ? bot.leverage : 10);
 const priceOf = s => s === sym && livePrice ? livePrice : bot && bot.prices[s];
 
@@ -229,14 +230,14 @@ function renderScores(x) {
 }
 function renderPositions() {
   const x = bot, ps = Object.entries(x.positions);
-  $("f-npos").textContent = `${ps.length} işlem · ${x.leverage}x`;
+  $("f-npos").textContent = `${ps.length}/${x.max_open} işlem · ${x.leverage}x · $${x.margin_usd} isolated`;
   if (!ps.length) { $("f-pos").innerHTML = '<tr><td class="muted">Açık işlem yok.</td></tr>'; return; }
   $("f-pos").innerHTML = `<tr><th>Coin</th><th>Yön</th><th>Açılış</th><th>Giriş</th><th>Kâr al (+%${x.tp_roe})</th><th>Zarar durdur (-%${x.sl_roe})</th><th>Anlık</th></tr>` +
     ps.map(([s, p]) => {
       const pr = priceOf(s), r = pr ? roeOf(p, pr) : null;
       return `<tr data-s="${s}" style="cursor:pointer${s === sym ? ";background:rgba(245,197,66,.08)" : ""}"><td><b>${coinName(s)}</b></td><td>${sideF(p.dir)}</td>
         <td>${dt(Date.parse(p.time) / 1000)}</td><td>${fp(p.entry, s)}</td><td class="green">${fp(p.tp, s)}</td><td class="red">${fp(p.sl, s)}</td>
-        <td class="${r >= 0 ? "green" : "red"}"><b>${r === null ? "–" : pct(r)}</b></td></tr>`;
+        <td class="${r >= 0 ? "green" : "red"}"><b>${r === null ? "–" : pct(r) + " · " + usdF(r, p)}</b></td></tr>`;
     }).join("");
   document.querySelectorAll("#f-pos tr[data-s]").forEach(tr => tr.onclick = () => selectCoin(tr.dataset.s));
 }
@@ -247,12 +248,12 @@ function renderBot(x, fresh = true) {
   const upd = new Date(Date.parse(x.updated));
   $("updated").textContent = upd.toLocaleString("tr-TR") + ` (${Math.round((Date.now() - upd) / 60000)} dk önce)`;
   $("ncoin").textContent = x.coins.length;
-  $("f-stats").innerHTML = statsHtml(x.stats);
+  $("f-stats").innerHTML = statsHtml(x.stats) + (x.stats.closed ? `<div><span class="muted small">Toplam $</span><br><b class="${x.stats.total_usd >= 0 ? "green" : "red"}">${(x.stats.total_usd >= 0 ? "+$" : "-$") + fmt(Math.abs(x.stats.total_usd), 2)}</b></div>` : "");
   $("f-hist").innerHTML = "<tr><th>Zaman</th><th>Coin</th><th>Olay</th><th>Fiyat</th><th>Kâr/Zarar</th></tr>" + (x.history.length ? x.history.slice().reverse().map(e =>
     `<tr data-s="${e.sym}" style="cursor:pointer"><td>${dt(e.t)}</td><td><b>${coinName(e.sym)}</b></td>` + (e.kind === "SINYAL"
       ? `<td>${e.dir === 1 ? "🟢" : "🔴"} ${sideF(e.dir)} AÇ</td><td>${fmt(e.price, e.dp)}</td><td></td></tr>`
       : `<td>${e.pct >= 0 ? "✅" : "❌"} KAPAT ${sideF(e.dir)}</td><td>${fmt(e.entry, e.dp)} → ${fmt(e.exit, e.dp)}<br><span class="muted small">${e.reason}</span></td>
-         <td class="${e.pct >= 0 ? "green" : "red"}"><b>${pct(e.pct)}</b></td></tr>`)).join("")
+         <td class="${e.pct >= 0 ? "green" : "red"}"><b>${pct(e.pct)}</b><br>${e.usd !== undefined ? (e.usd >= 0 ? "+$" : "-$") + fmt(Math.abs(e.usd), 2) : usdF(e.pct)}</td></tr>`)).join("")
     : '<tr><td colspan="5" class="muted">Henüz işlem yok. Bot yeni işlemleri burada listeler.</td></tr>');
   document.querySelectorAll("#f-hist tr[data-s]").forEach(tr => tr.onclick = () => selectCoin(tr.dataset.s));
   if (fresh) checkGong(x);

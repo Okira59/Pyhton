@@ -4,7 +4,8 @@ Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinle
 5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI, MACD ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
-kâr %30'a ya da zarar %20'ye ulaşınca işlem kapatılır. 7/24 çalışır (hafta sonu dahil).
+kâr %30'a ya da zarar %20'ye ulaşınca işlem kapatılır. Her işlem isolated $20
+teminatla açılır; aynı anda en fazla 3 işlem açık olur (doluyken sinyal bildirilir, işlem açılmaz). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
 """
 import argparse
@@ -40,6 +41,8 @@ MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman dilim
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
 TP_ROE = float(os.getenv("TP_ROE", "30"))  # kaldıraçlı kâr % (10x'te fiyat %3)
 SL_ROE = float(os.getenv("SL_ROE", "20"))  # kaldıraçlı zarar % (10x'te fiyat %2)
+MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
+MAX_OPEN = int(os.getenv("MAX_OPEN", "3"))  # aynı anda en fazla açık işlem
 
 STATE_FILE = os.getenv("STATE_FILE", "futures_state.json")
 MAX_EVENT_AGE = pd.Timedelta(minutes=30)
@@ -160,6 +163,10 @@ def roe(direction: int, entry: float, price: float) -> float:
     return direction * (price - entry) / entry * 100 * LEVERAGE
 
 
+def usd(r: float, margin: float = MARGIN_USD) -> float:
+    return margin * r / 100
+
+
 def _side(d: int) -> str:
     return "🟢 LONG" if d == 1 else "🔴 SHORT"
 
@@ -172,9 +179,10 @@ def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
     tp, sl = levels(d, row["Close"])
     lines = [f"{'🟢🟢' if d == 1 else '🔴🔴'} FUTURES – {_coin(sym)} {'LONG' if d == 1 else 'SHORT'} AÇ ({LEVERAGE:g}x)",
              f"Bitget {sym}  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
+             f"Isolated · teminat ${MARGIN_USD:g} · pozisyon ${MARGIN_USD * LEVERAGE:g}",
              f"Giriş fiyatı: {row['Close']:.{dp}f}",
-             f"Kâr al (+%{TP_ROE:g}): {tp:.{dp}f}",
-             f"Zarar durdur (-%{SL_ROE:g}): {sl:.{dp}f}", ""]
+             f"Kâr al (+%{TP_ROE:g} = +${usd(TP_ROE):.2f}): {tp:.{dp}f}",
+             f"Zarar durdur (-%{SL_ROE:g} = -${usd(SL_ROE):.2f}): {sl:.{dp}f}", ""]
     for n in TIMEFRAMES:
         agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == d]
         lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/6  {', '.join(agree) if agree else '-'}")
@@ -187,10 +195,11 @@ def _close_text(sym: str, dp: int, pos: dict, row: pd.Series, exit_price: float,
             f"Bitget {sym}  |  {row['close_time']:%Y-%m-%d %H:%M} UTC\n"
             f"Sebep: {reason}\n"
             f"Giriş: {pos['entry']:.{dp}f}  →  Çıkış: {exit_price:.{dp}f}\n"
-            f"{'Kâr' if r >= 0 else 'Zarar'}: {r:+.2f}% ({LEVERAGE:g}x)  ·  fiyat {r / LEVERAGE:+.2f}%")
+            f"{'Kâr' if r >= 0 else 'Zarar'}: {r:+.2f}% ({LEVERAGE:g}x)  =  {usd(r, pos.get('margin', MARGIN_USD)):+.2f}$"
+            f"  ·  fiyat {r / LEVERAGE:+.2f}%")
 
 
-def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None) -> list:
+def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, can_open=lambda: True) -> list:
     """Bir coinin mumlarını sırayla işler (coin başına tek işlem). (zaman, tür, mesaj, bilgi) listesi döner."""
     events = []
     rows = data if since is None else data[data["close_time"] > since]
@@ -208,16 +217,22 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None) 
             if exit_price is not None:
                 events.append((row["close_time"], "KAPAT", _close_text(sym, dp, pos, row, exit_price, reason),
                                {"sym": sym, "dp": dp, "dir": pos["dir"], "entry": pos["entry"], "exit": exit_price,
-                                "pct": round(roe(pos["dir"], pos["entry"], exit_price), 2), "reason": reason}))
+                                "pct": round(roe(pos["dir"], pos["entry"], exit_price), 2), "reason": reason,
+                                "usd": round(usd(roe(pos["dir"], pos["entry"], exit_price), pos.get("margin", MARGIN_USD)), 2)}))
                 cs["position"] = pos = None
         sig = int(row["new_signal"])
-        if sig != 0 and not pos:
+        if sig != 0 and not pos and not can_open():
+            events.append((row["close_time"], "LIMIT",
+                           f"⚠️ LİMİT DOLU ({MAX_OPEN}/{MAX_OPEN} işlem açık) – bu işlem AÇILMADI\n\n"
+                           + _open_text(sym, dp, row, sig).replace(" AÇ (", " SİNYALİ ("),
+                           {"sym": sym, "dp": dp, "dir": sig, "price": float(row["Close"])}))
+        elif sig != 0 and not pos:
             entry = float(row["Close"])
             tp, sl = levels(sig, entry)
             events.append((row["close_time"], "SINYAL", _open_text(sym, dp, row, sig),
                            {"sym": sym, "dp": dp, "dir": sig, "price": entry}))
             cs["position"] = {"dir": sig, "entry": entry, "tp": tp, "sl": sl, "dp": dp,
-                              "time": row["close_time"].isoformat()}
+                              "margin": MARGIN_USD, "time": row["close_time"].isoformat()}
     return events
 
 
@@ -243,13 +258,13 @@ def _load_state() -> dict:
 
 def _status_text(results: dict, state: dict) -> str:
     pos = state["positions"]
-    lines = ["🕐 SAATLİK DURUM – Futures", f"Taranan coin: {len(results)}  |  açık işlem: {len(pos)}", ""]
+    lines = ["🕐 SAATLİK DURUM – Futures", f"Taranan coin: {len(results)}  |  açık işlem: {len(pos)}/{MAX_OPEN}", ""]
     for sym, p in list(pos.items())[:40]:
         data = results.get(sym)
         if data is None:
             continue
         r = roe(p["dir"], p["entry"], float(data["Close"].iloc[-1]))
-        lines.append(f"{_side(p['dir'])} {_coin(sym):<8} {r:+.1f}%")
+        lines.append(f"{_side(p['dir'])} {_coin(sym):<8} {r:+.1f}%  {usd(r, p.get('margin', MARGIN_USD)):+.2f}$")
     if not pos:
         lines.append("Açık işlem yok.")
     return "\n".join(lines)
@@ -259,7 +274,8 @@ def check_and_notify(send: bool = True):
     state = _load_state()
     top = top_symbols()
     places = price_places()
-    symbols = [s for s, _ in top] + [s for s in state["positions"] if s not in dict(top)]
+    # açık işlemi olan coinler önce işlenir: kapanışlar yeni işlemlere yer açsın
+    symbols = list(state["positions"]) + [s for s, _ in top if s not in state["positions"]]
     with ThreadPoolExecutor(WORKERS) as ex:
         results = {s: d for s, d in zip(symbols, ex.map(_scan_one, symbols)) if d is not None and len(d)}
     print(f"{len(results)}/{len(symbols)} coin tarandı.")
@@ -271,9 +287,11 @@ def check_and_notify(send: bool = True):
         since = state["last"].get(sym)
         if since is not None:
             cs = {"position": state["positions"].get(sym)}
-            for t, kind, text, info in process_events(sym, dp, data, cs, since=pd.Timestamp(since)):
+            can_open = lambda: len([s for s in state["positions"] if s != sym]) < MAX_OPEN
+            for t, kind, text, info in process_events(sym, dp, data, cs, since=pd.Timestamp(since), can_open=can_open):
                 print(f"\n{text}")
-                state["history"].append({"t": dashboard.ts(t), "kind": kind, **info})
+                if kind != "LIMIT":
+                    state["history"].append({"t": dashboard.ts(t), "kind": kind, **info})
                 if send and now - t <= MAX_EVENT_AGE:
                     send_telegram(text)
             if cs["position"]:
@@ -318,9 +336,12 @@ def export_dashboard(results: dict, top: list, places: dict, state: dict):
         "leverage": LEVERAGE,
         "tp_roe": TP_ROE,
         "sl_roe": SL_ROE,
+        "margin_usd": MARGIN_USD,
+        "max_open": MAX_OPEN,
         "positions": state["positions"],
         "history": state["history"],
-        "stats": dashboard.stats(state["history"]),
+        "stats": {**dashboard.stats(state["history"]),
+                  "total_usd": round(sum(e.get("usd", usd(e["pct"])) for e in state["history"] if e["kind"] == "KAPAT"), 2)},
     })
 
 
