@@ -39,8 +39,9 @@ MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "4"))  # üst zaman dilimin
 MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman diliminden en az bu kadarı onaylamalı
 
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
-TP_ROE = float(os.getenv("TP_ROE", "30"))  # kaldıraçlı kâr % (10x'te fiyat %3)
-SL_ROE = float(os.getenv("SL_ROE", "20"))  # kaldıraçlı zarar % (10x'te fiyat %2)
+SL_ROE = float(os.getenv("SL_ROE", "20"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %2)
+TRAIL_START_ROE = float(os.getenv("TRAIL_START_ROE", "20"))  # kâr bu ROE'ye ulaşınca iz süren stop başlar
+TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden izler
 MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
 MAX_OPEN = int(os.getenv("MAX_OPEN", "5"))  # aynı anda en fazla açık işlem
 
@@ -155,8 +156,13 @@ def build(frames: dict, min5=None, minh=None, ntf=None) -> pd.DataFrame:
 
 
 def levels(direction: int, entry: float):
-    return (entry * (1 + direction * TP_ROE / LEVERAGE / 100),
+    """(iz süren stopun başladığı fiyat, ilk zarar durdur fiyatı)"""
+    return (entry * (1 + direction * TRAIL_START_ROE / LEVERAGE / 100),
             entry * (1 - direction * SL_ROE / LEVERAGE / 100))
+
+
+def trail_stop(direction: int, peak: float) -> float:
+    return peak * (1 - direction * TRAIL_GAP_ROE / LEVERAGE / 100)
 
 
 def roe(direction: int, entry: float, price: float) -> float:
@@ -176,13 +182,14 @@ def _coin(sym: str) -> str:
 
 
 def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
-    tp, sl = levels(d, row["Close"])
+    act, sl = levels(d, row["Close"])
     lines = [f"{'🟢⚠️🟢' if d == 1 else '🔴⚠️🔴'} FUTURES – {_coin(sym)} {'LONG' if d == 1 else 'SHORT'} AÇ ({LEVERAGE:g}x)",
              f"Bitget {sym}  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
              f"Isolated · teminat ${MARGIN_USD:g} · pozisyon ${MARGIN_USD * LEVERAGE:g}",
              f"Giriş fiyatı: {row['Close']:.{dp}f}",
-             f"Kâr al (+%{TP_ROE:g} = +${usd(TP_ROE):.2f}): {tp:.{dp}f}",
-             f"Zarar durdur (-%{SL_ROE:g} = -${usd(SL_ROE):.2f}): {sl:.{dp}f}", ""]
+             f"Zarar durdur (-%{SL_ROE:g} = -${usd(SL_ROE):.2f}): {sl:.{dp}f}",
+             f"İz süren stop: kâr +%{TRAIL_START_ROE:g} (+${usd(TRAIL_START_ROE):.2f}) olunca devreye girer: {act:.{dp}f}",
+             f"Sabit hedef yok; stop en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip eder.", ""]
     for n in TIMEFRAMES:
         agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == d]
         lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/6  {', '.join(agree) if agree else '-'}")
@@ -207,14 +214,32 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
     for _, row in rows.iterrows():
         pos = cs.get("position")
         if pos and row["close_time"] > pd.Timestamp(pos["time"]):
-            tp, sl = pos["tp"], pos["sl"]
-            stopped = row["Low"] <= sl if pos["dir"] == 1 else row["High"] >= sl
-            hit = row["High"] >= tp if pos["dir"] == 1 else row["Low"] <= tp
+            if "act" not in pos:  # eski (sabit hedefli) pozisyonlar iz süren stopa geçer
+                pos["act"] = levels(pos["dir"], pos["entry"])[0]
+                pos.pop("tp", None)
+            d, sl = pos["dir"], pos["sl"]
+            # temkinli: mum içinde önce mevcut stop kontrol edilir, zirve sonra güncellenir
             exit_price = reason = None
-            if stopped:  # aynı mumda ikisi de olduysa temkinli: zarar say
-                exit_price, reason = sl, f"-%{SL_ROE:g} zarar durdur"
-            elif hit:
-                exit_price, reason = tp, f"+%{TP_ROE:g} kâr hedefine ulaşıldı"
+            if (row["Low"] <= sl) if d == 1 else (row["High"] >= sl):
+                exit_price = sl
+                reason = (f"İz süren stop (zirve kâr +%{roe(d, pos['entry'], pos['peak']):.1f})" if pos.get("trail")
+                          else f"-%{SL_ROE:g} zarar durdur")
+            else:
+                peak = max(pos.get("peak", pos["entry"]), row["High"]) if d == 1 else min(pos.get("peak", pos["entry"]), row["Low"])
+                pos["peak"] = float(peak)
+                if roe(d, pos["entry"], peak) >= TRAIL_START_ROE:
+                    ts = trail_stop(d, peak)
+                    if (ts > sl) if d == 1 else (ts < sl):
+                        pos["sl"] = float(ts)
+                    if not pos.get("trail"):
+                        pos["trail"] = True
+                        r = roe(d, pos["entry"], pos["sl"])
+                        events.append((row["close_time"], "TAKIP",
+                                       f"🔒 FUTURES – {_coin(sym)} İZ SÜREN STOP DEVREDE ({_side(d)} {LEVERAGE:g}x)\n"
+                                       f"Kâr +%{roe(d, pos['entry'], peak):.1f} ROE'ye ulaştı.\n"
+                                       f"Yeni stop: {pos['sl']:.{dp}f} (en az {r:+.1f}% = {usd(r, pos.get('margin', MARGIN_USD)):+.2f}$ kilitli)\n"
+                                       f"Stop, en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip ediyor.",
+                                       {"sym": sym, "dp": dp, "dir": d, "sl": pos["sl"]}))
             if exit_price is not None:
                 events.append((row["close_time"], "KAPAT", _close_text(sym, dp, pos, row, exit_price, reason),
                                {"sym": sym, "dp": dp, "dir": pos["dir"], "entry": pos["entry"], "exit": exit_price,
@@ -229,10 +254,10 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
                            {"sym": sym, "dp": dp, "dir": sig, "price": float(row["Close"])}))
         elif sig != 0 and not pos:
             entry = float(row["Close"])
-            tp, sl = levels(sig, entry)
+            act, sl = levels(sig, entry)
             events.append((row["close_time"], "SINYAL", _open_text(sym, dp, row, sig),
                            {"sym": sym, "dp": dp, "dir": sig, "price": entry}))
-            cs["position"] = {"dir": sig, "entry": entry, "tp": tp, "sl": sl, "dp": dp,
+            cs["position"] = {"dir": sig, "entry": entry, "act": act, "sl": sl, "peak": entry, "trail": False, "dp": dp,
                               "margin": MARGIN_USD, "time": row["close_time"].isoformat()}
     return events
 
@@ -265,7 +290,8 @@ def _status_text(results: dict, state: dict) -> str:
         if data is None:
             continue
         r = roe(p["dir"], p["entry"], float(data["Close"].iloc[-1]))
-        lines.append(f"{_side(p['dir'])} {_coin(sym):<8} {r:+.1f}%  {usd(r, p.get('margin', MARGIN_USD)):+.2f}$")
+        lines.append(f"{_side(p['dir'])} {_coin(sym):<8} {r:+.1f}%  {usd(r, p.get('margin', MARGIN_USD)):+.2f}$"
+                     + ("  🔒 stop " + f"{roe(p['dir'], p['entry'], p['sl']):+.1f}%" if p.get("trail") else ""))
     if not pos:
         lines.append("Açık işlem yok.")
     return "\n".join(lines)
@@ -291,7 +317,7 @@ def check_and_notify(send: bool = True):
             can_open = lambda: len([s for s in state["positions"] if s != sym]) < MAX_OPEN
             for t, kind, text, info in process_events(sym, dp, data, cs, since=pd.Timestamp(since), can_open=can_open):
                 print(f"\n{text}")
-                if kind != "LIMIT":
+                if kind in ("SINYAL", "KAPAT"):
                     state["history"].append({"t": dashboard.ts(t), "kind": kind, **info})
                 if send and now - t <= MAX_EVENT_AGE:
                     send_telegram(text)
@@ -335,7 +361,8 @@ def export_dashboard(results: dict, top: list, places: dict, state: dict):
         "min_score_higher": MIN_SCORE_HIGHER,
         "min_higher_tfs": MIN_HIGHER_TFS,
         "leverage": LEVERAGE,
-        "tp_roe": TP_ROE,
+        "trail_start_roe": TRAIL_START_ROE,
+        "trail_gap_roe": TRAIL_GAP_ROE,
         "sl_roe": SL_ROE,
         "margin_usd": MARGIN_USD,
         "max_open": MAX_OPEN,
@@ -350,7 +377,7 @@ def show_history(sym: str, days: int):
     bot.SKIP_WEEKEND = False
     m5 = bot._bitget("5m", days, sym)[["Open", "High", "Low", "Close", "Volume"]].dropna()
     data = build(frames_from_5m(_closed_only(m5, TF_5M)))
-    events = process_events(sym, 4, data, {})
+    events = [e for e in process_events(sym, 4, data, {}) if e[1] in ("SINYAL", "KAPAT")]
     for t, kind, _, info in events:
         if kind == "SINYAL":
             print(f"{t:%m-%d %H:%M}  {_side(info['dir'])} @ {info['price']:g}")

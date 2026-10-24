@@ -57,7 +57,7 @@
     <div class="scroll"><table id="f-hist"></table></div>
   </section>
 
-  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Her işlem isolated $20 teminat (10x = $200 pozisyon) ile açılır, aynı anda en fazla 5 işlem açık olur; 5 işlem açıkken gelen sinyaller sadece Telegram'a bildirilir. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
+  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Her işlem isolated $20 teminat (10x = $200 pozisyon) ile açılır, aynı anda en fazla 5 işlem açık olur; 5 işlem açıkken gelen sinyaller sadece Telegram'a bildirilir. Sabit kâr hedefi yoktur: ilk stop -%20 ROE; kâr +%20 ROE'ye ulaşınca iz süren stop devreye girer ve en yüksek kârın %15 ROE gerisinden takip eder. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
   işlem ücreti (giriş+çıkış ≈ %1,2 ROE) ve fonlama dahil değildir. Geçmiş tablo botun canlı açıp kapattığı işlemlerdir. Yatırım tavsiyesi değildir.</p>
 </main>
 <script src="common.js"></script>
@@ -188,7 +188,7 @@ function drawBot() {
     color: e.dir === 1 ? "#22c55e" : "#ef4444", shape: e.dir === 1 ? "arrowUp" : "arrowDown", text: e.dir === 1 ? "LONG" : "SHORT" })));
   ch.priceLines.forEach(l => ch.candle.removePriceLine(l)); ch.priceLines = [];
   const p = bot.positions[sym];
-  if (p) for (const [v, c, n] of [[p.entry, "#f5c542", "Giriş"], [p.tp, "#22c55e", "Kâr al"], [p.sl, "#ef4444", "Zarar durdur"]])
+  if (p) for (const [v, c, n] of [[p.entry, "#f5c542", "Giriş"], ...(p.trail ? [] : [[p.act ?? p.tp, "#22c55e", "İz süren stop başlar"]]), [p.sl, p.trail ? "#22c55e" : "#ef4444", p.trail ? "İz süren stop" : "Zarar durdur"]])
     ch.priceLines.push(ch.candle.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, title: n }));
 }
 
@@ -232,11 +232,11 @@ function renderPositions() {
   const x = bot, ps = Object.entries(x.positions);
   $("f-npos").textContent = `${ps.length}/${x.max_open} işlem · ${x.leverage}x · $${x.margin_usd} isolated`;
   if (!ps.length) { $("f-pos").innerHTML = '<tr><td class="muted">Açık işlem yok.</td></tr>'; return; }
-  $("f-pos").innerHTML = `<tr><th>Coin</th><th>Yön</th><th>Açılış</th><th>Giriş</th><th>Kâr al (+%${x.tp_roe})</th><th>Zarar durdur (-%${x.sl_roe})</th><th>Anlık</th></tr>` +
+  $("f-pos").innerHTML = `<tr><th>Coin</th><th>Yön</th><th>Açılış</th><th>Giriş</th><th>Takip başlar (+%${x.trail_start_roe})</th><th>Stop</th><th>Anlık</th></tr>` +
     ps.map(([s, p]) => {
       const pr = priceOf(s), r = pr ? roeOf(p, pr) : null;
       return `<tr data-s="${s}" style="cursor:pointer${s === sym ? ";background:rgba(245,197,66,.08)" : ""}"><td><b>${coinName(s)}</b></td><td>${sideF(p.dir)}</td>
-        <td>${dt(Date.parse(p.time) / 1000)}</td><td>${fp(p.entry, s)}</td><td class="green">${fp(p.tp, s)}</td><td class="red">${fp(p.sl, s)}</td>
+        <td>${dt(Date.parse(p.time) / 1000)}</td><td>${fp(p.entry, s)}</td><td class="green">${p.trail ? "✔ devrede" : fp(p.act ?? p.tp, s)}</td><td class="${p.trail ? "green" : "red"}">${p.trail ? "🔒 " : ""}${fp(p.sl, s)}<br><span class="muted small">${pct(roeOf(p, p.sl))}</span></td>
         <td class="${r >= 0 ? "green" : "red"}"><b>${r === null ? "–" : pct(r) + " · " + usdF(r, p)}</b></td></tr>`;
     }).join("");
   document.querySelectorAll("#f-pos tr[data-s]").forEach(tr => tr.onclick = () => selectCoin(tr.dataset.s));
