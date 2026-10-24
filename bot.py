@@ -231,15 +231,17 @@ def format_report(row: pd.Series) -> str:
 
 
 def send_telegram(text: str):
-    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+    channels = [c.strip() for c in os.getenv("TELEGRAM_CHANNEL_ID", "").split(",") if c.strip()]
+    if not TELEGRAM_TOKEN:
         return
-    try:
-        r = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                          data={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10)
-        if not r.ok:
-            print(f"Telegram hatası: {r.status_code} {r.json().get('description', '')}")
-    except requests.RequestException as e:
-        print(f"Telegram hatası: {e}")
+    for chat in ([TELEGRAM_CHAT_ID] if TELEGRAM_CHAT_ID else []) + channels:
+        try:
+            r = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                              data={"chat_id": chat, "text": text}, timeout=10)
+            if not r.ok:
+                print(f"Telegram hatası: {r.status_code} {r.json().get('description', '')}")
+        except requests.RequestException as e:
+            print(f"Telegram hatası: {e}")
 
 
 def check_once(notify_only_new: bool = False):

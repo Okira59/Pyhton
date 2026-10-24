@@ -1,0 +1,29 @@
+name: Telegram kanal ID bul
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bul:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Botların gördüğü kanallar
+        env:
+          T1: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          T2: ${{ secrets.TELEGRAM_BOT_TOKEN_15 }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          for name in ("T1", "T2"):
+              tok = os.getenv(name)
+              if not tok:
+                  continue
+              data = json.load(urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getUpdates"))
+              seen = {}
+              for u in data.get("result", []):
+                  for k in ("channel_post", "my_chat_member", "message"):
+                      chat = (u.get(k) or {}).get("chat")
+                      if chat and chat.get("type") in ("channel", "supergroup", "group"):
+                          seen[chat["id"]] = chat.get("title")
+              print("bot", "1 (okiragold)" if name == "T1" else "2 (dip-tavan)", seen or "kanal bulunamadı")
+          PY

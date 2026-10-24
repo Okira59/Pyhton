@@ -32,6 +32,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN_15 }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID_15 || secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID_DIP }}
         run: python dip_tavan.py --notify ${{ inputs.test && '--test' || '' }}
       - name: Durumu kaydet
         run: |
