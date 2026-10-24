@@ -177,7 +177,7 @@ def _coin(sym: str) -> str:
 
 def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
     tp, sl = levels(d, row["Close"])
-    lines = [f"{'🟢🟢' if d == 1 else '🔴🔴'} FUTURES – {_coin(sym)} {'LONG' if d == 1 else 'SHORT'} AÇ ({LEVERAGE:g}x)",
+    lines = [f"{'🟢⚠️🟢' if d == 1 else '🔴⚠️🔴'} FUTURES – {_coin(sym)} {'LONG' if d == 1 else 'SHORT'} AÇ ({LEVERAGE:g}x)",
              f"Bitget {sym}  |  {row['close_time']:%Y-%m-%d %H:%M} UTC",
              f"Isolated · teminat ${MARGIN_USD:g} · pozisyon ${MARGIN_USD * LEVERAGE:g}",
              f"Giriş fiyatı: {row['Close']:.{dp}f}",
@@ -186,6 +186,7 @@ def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
     for n in TIMEFRAMES:
         agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == d]
         lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/6  {', '.join(agree) if agree else '-'}")
+    lines += ["", "👉 Kontrol edin, girmek isteyen varsa girebilir."]
     return "\n".join(lines)
 
 
@@ -223,9 +224,8 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
         sig = int(row["new_signal"])
         if sig != 0 and not pos and not can_open():
             events.append((row["close_time"], "LIMIT",
-                           f"⚠️ LİMİT DOLU ({MAX_OPEN}/{MAX_OPEN} işlem açık) – bu işlem AÇILMADI\n\n"
-                           + _open_text(sym, dp, row, sig).replace(" AÇ (", " SİNYALİ (")
-                           + "\n\n👉 Kontrol edin, girmek isteyen varsa girebilir.",
+                           f"{'🟢' if sig == 1 else '🔴'}⚠️ LİMİT DOLU ({MAX_OPEN}/{MAX_OPEN} işlem açık) – bu işlem AÇILMADI\n\n"
+                           + _open_text(sym, dp, row, sig).replace(" AÇ (", " SİNYALİ ("),
                            {"sym": sym, "dp": dp, "dir": sig, "price": float(row["Close"])}))
         elif sig != 0 and not pos:
             entry = float(row["Close"])
