@@ -5,7 +5,7 @@ Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinle
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
 kâr %30'a ya da zarar %20'ye ulaşınca işlem kapatılır. Her işlem isolated $20
-teminatla açılır; aynı anda en fazla 3 işlem açık olur (doluyken sinyal bildirilir, işlem açılmaz). 7/24 çalışır (hafta sonu dahil).
+teminatla açılır; aynı anda en fazla 5 işlem açık olur (doluyken sinyal bildirilir, işlem açılmaz). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
 """
 import argparse
@@ -42,7 +42,7 @@ LEVERAGE = float(os.getenv("LEVERAGE", "10"))
 TP_ROE = float(os.getenv("TP_ROE", "30"))  # kaldıraçlı kâr % (10x'te fiyat %3)
 SL_ROE = float(os.getenv("SL_ROE", "20"))  # kaldıraçlı zarar % (10x'te fiyat %2)
 MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
-MAX_OPEN = int(os.getenv("MAX_OPEN", "3"))  # aynı anda en fazla açık işlem
+MAX_OPEN = int(os.getenv("MAX_OPEN", "5"))  # aynı anda en fazla açık işlem
 
 STATE_FILE = os.getenv("STATE_FILE", "futures_state.json")
 MAX_EVENT_AGE = pd.Timedelta(minutes=30)
@@ -224,7 +224,8 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
         if sig != 0 and not pos and not can_open():
             events.append((row["close_time"], "LIMIT",
                            f"⚠️ LİMİT DOLU ({MAX_OPEN}/{MAX_OPEN} işlem açık) – bu işlem AÇILMADI\n\n"
-                           + _open_text(sym, dp, row, sig).replace(" AÇ (", " SİNYALİ ("),
+                           + _open_text(sym, dp, row, sig).replace(" AÇ (", " SİNYALİ (")
+                           + "\n\n👉 Kontrol edin, girmek isteyen varsa girebilir.",
                            {"sym": sym, "dp": dp, "dir": sig, "price": float(row["Close"])}))
         elif sig != 0 and not pos:
             entry = float(row["Close"])
