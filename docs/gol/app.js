@@ -261,12 +261,14 @@ function renderListe() {
 // ---------- kuponlar ----------
 let KUPON = null;
 const fmtT = (ts) => new Date(ts * 1000).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const KIND = { kisa: "4 saatlik", yuksek: "Günlük yüksek oran", iyms: "İY/MS · 4 saatlik", iyms_y: "İY/MS · günlük yüksek oran" };
+const isHigh = (k) => k === "yuksek" || k === "iyms_y";
 function couponCard(c, top) {
   const st = { "kazandı": ["win", "pos", "TUTTU"], "kaybetti": ["lose", "neg", "YATTI"], "sonuçsuz": ["", "", "Sonuçsuz"] }[c.status] || ["", "", "Bekliyor"];
   let h = `<div class="cp ${st[0]} ${top ? "top" : ""}"><div class="cp-h">
-    <span class="tag ${c.kind === "yuksek" ? "y" : ""}">${c.kind === "yuksek" ? "Günlük yüksek oran" : "4 saatlik"} · ${c.legs.length}'lü</span>
+    <span class="tag ${isHigh(c.kind) ? "y" : ""}">${KIND[c.kind] || c.kind} · ${c.legs.length}'lü</span>
     <span>Toplam oran <span class="big">${c.odd.toFixed(2)}</span></span>
-    <span>Tutma olasılığı <span class="big" ${heat(c.p * 100, c.kind === "yuksek" ? 15 : 35)}>%${f1(c.p * 100)}</span></span>
+    <span>Tutma olasılığı <span class="big" ${heat(c.p * 100, isHigh(c.kind) ? 15 : 35)}>%${f1(c.p * 100)}</span></span>
     <span class="note" style="margin:0">Hazırlandı: ${fmtT(c.created)}</span>
     <span class="st ${st[1]}">${st[2]}</span></div>
     <div class="scroll"><table><tr><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th class="l">Tahmin</th><th>Oran</th><th>Olasılık</th><th>Oranın ima ettiği</th><th>Skor (İY / MS)</th></tr>`;
@@ -285,10 +287,20 @@ function renderKupon() {
   const active = all.filter((c) => c.status === "bekliyor" && Math.max(...c.legs.map((l) => l.ts)) + 2.5 * 3600 > now);
   const done = all.filter((c) => c.status === "kazandı" || c.status === "kaybetti");
   let h = `<p class="note">Kuponlar iddaa bültenindeki oranlardan otomatik hazırlanır: <b>4 saatte bir</b> önümüzdeki 12 saatin maçlarından 3'lü ve 4'lü kuponlar, <b>günde bir kez</b> (09:00 sonrası) o günün maçlarından 2-3 maçlık yüksek oranlı kuponlar.
+    <b>İY/MS kuponları</b> aynı zamanlamayla hazırlanır; iddaa İY/MS oranını çoğu maçta yayınlamadığı için bunlarda Flashscore'daki 1xBet oranları kullanılır.
     Olasılık: oranın ima ettiği olasılık, son 3 ayda aynı oran seviyesindeki maçların gerçek sonuçlarına göre düzeltilir. Son güncelleme: ${fmtT(KUPON.updated)}</p>`;
   const sum = (kind) => { const d = done.filter((c) => c.kind === kind); const w = d.filter((c) => c.status === "kazandı"); const ret = w.reduce((s, c) => s + c.odd, 0);
-    return `<div class="card"><div class="t">${kind === "yuksek" ? "Yüksek oranlı" : "4 saatlik"} kuponlar (sonuçlanan)</div><div class="v">${w.length} / ${d.length}</div><div class="s">${d.length ? `tutma %${f1((100 * w.length) / d.length)} · 1 birim başına getiri ${(ret / d.length).toFixed(2)}` : "henüz sonuçlanan yok"}</div></div>`; };
-  h += `<div class="cards">${sum("kisa")}${sum("yuksek")}</div>`;
+    return `<div class="card"><div class="t">${KIND[kind]} kuponlar (sonuçlanan)</div><div class="v">${w.length} / ${d.length}</div><div class="s">${d.length ? `tutma %${f1((100 * w.length) / d.length)} · 1 birim başına getiri ${(ret / d.length).toFixed(2)}` : "henüz sonuçlanan yok"}</div></div>`; };
+  h += `<div class="cards">${sum("kisa")}${sum("yuksek")}${sum("iyms")}${sum("iyms_y")}</div>`;
+  const top = KUPON.iyms_top || {};
+  if (Object.keys(top).length) {
+    h += `<h2>İY/MS seçenekleri: önümüzdeki 36 saatin en olası maçları <span class="note">(Flashscore / 1xBet oranları)</span></h2><div class="scroll"><table><tr><th class="l">Seçenek</th><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th>Oran</th><th>Olasılık</th><th>Oranın ima ettiği</th></tr>`;
+    for (const [k, rows] of Object.entries(top)) {
+      if (!rows.length) { h += `<tr><td class="l"><b>${esc(k)}</b></td><td colspan="6" class="note">uygun maç yok</td></tr>`; continue; }
+      rows.forEach((l, i) => (h += `<tr><td class="l">${i ? "" : `<b>${esc(k)}</b>`}</td><td>${fmtT(l.ts)}</td><td class="l">${esc(l.lg)}</td><td class="l">${esc(l.h)} - ${esc(l.a)}</td><td>${l.odd.toFixed(2)}</td><td>%${f1(l.p * 100)}</td><td>%${f1(l.p0 * 100)}</td></tr>`));
+    }
+    h += `</table></div>`;
+  }
   h += `<h2>Aktif kuponlar <span class="note">(tutma olasılığı en yüksek olan en altta)</span></h2>`;
   if (!active.length) h += `<p class="note">Şu an bekleyen kupon yok. Bir sonraki güncellemede hazırlanacak.</p>`;
   const sorted = active.slice().sort((a, b) => a.p - b.p);

@@ -44,6 +44,9 @@ jobs:
       - name: Flashscore (son 3 gün)
         if: steps.gate.outputs.run
         run: python -u gol/fs_collect.py --days 3
+      - name: Flashscore yaklaşan maçlar (İY/MS kuponları için)
+        if: steps.gate.outputs.run
+        run: cd gol && python -u fs_upcoming.py
       - name: Panel verisi
         if: steps.gate.outputs.run
         run: python -u gol/build.py docs/gol/data/matches.json
