@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: "3.11"
       - if: steps.gate.outputs.run
-        run: pip install requests
+        run: pip install requests numpy
       - name: iddaa oranları + sonuçları
         if: steps.gate.outputs.run
         run: python -u gol/iddaa_collect.py
@@ -55,7 +55,7 @@ jobs:
         run: python -u gol/kupon.py
       - name: Skor olasılıkları
         if: steps.gate.outputs.run
-        run: pip install numpy && python -u gol/skor.py
+        run: python -u gol/skor.py
       - name: Kaydet
         if: steps.gate.outputs.run
         run: |
