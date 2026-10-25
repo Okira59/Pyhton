@@ -40,9 +40,6 @@ jobs:
         run: pip install requests numpy
       - name: Spor Toto analizi
         if: steps.gate.outputs.run
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
         run: cd toto && python -u toto.py
       - name: Kaydet
         if: steps.gate.outputs.run

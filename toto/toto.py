@@ -489,39 +489,6 @@ def apply_results(cur, res):
     cur["ikramiye"] = res.get("dividends")
 
 
-def tg(text):
-    tok, chat = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
-    if not tok or not chat:
-        print("[telegram yok]\n" + text)
-        return
-    try:
-        requests.post(f"https://api.telegram.org/bot{tok}/sendMessage", data={"chat_id": chat, "text": text}, timeout=15)
-    except requests.RequestException as e:
-        print("Telegram hatası:", e)
-
-
-def tg_text(cur, title):
-    lines = [f"⚽ SPOR TOTO {cur['hafta']}. hafta ({cur['ad']}) — {title}", f"Son oynama: {cur['bitis'][:16].replace('T', ' ')}", ""]
-    for r in cur["maclar"]:
-        best = max(range(3), key=lambda i: r["p"][i])
-        lines.append(f"{r['no']:>2}. {r['ev']} - {r['dep']}: 1 %{r['p'][0]*100:.0f} | 0 %{r['p'][1]*100:.0f} | 2 %{r['p'][2]*100:.0f} → {OUTC[best]}"
-                     + (" ⚠️" if r["notlar"] else ""))
-    lines.append("")
-    for k in cur["kuponlar"]:
-        if k["butce"] in (1, 96, 576, 2304):
-            lines.append(f"🎟 {k['kolon']} kolon ({k['tutar']:,} TL): " + " ".join(k["sec"]) +
-                         f"\n   15 bilme %{k['p15']*100:.3g} · 12+ bilme %{k['p12']*100:.0f}")
-    lines.append("\nDetay: https://okira59.github.io/Pyhton/toto/")
-    return "\n".join(lines)
-
-
-def tg_result(cur):
-    lines = [f"🏁 SPOR TOTO {cur['hafta']}. hafta sonuçlandı ({cur['ad']})"]
-    for k in cur["kuponlar"]:
-        lines.append(f"{k['kolon']} kolon: {k['dogru']}/{k['biten']} doğru")
-    return "\n".join(lines)
-
-
 def main():
     now = time.time()
     state = load(STATE, {})
@@ -541,9 +508,6 @@ def main():
             hist["haftalar"] = [h for h in hist["haftalar"] if h["hafta"] != cur["hafta"]] + [cur]
             hist["haftalar"] = hist["haftalar"][-52:]
             save(HIST, hist)
-            if state.get("sonuc") != cur["hafta"]:
-                tg(tg_result(cur))
-                state["sonuc"] = cur["hafta"]
             cur = None
         else:
             save(OUT, cur)
@@ -561,9 +525,6 @@ def main():
         if all(r.get("kazanan") in OUTC for r in cur["maclar"]):
             hist["haftalar"] = [h for h in hist["haftalar"] if h["hafta"] != cyc] + [cur]
             save(HIST, hist)
-            if state.get("sonuc") != cyc:
-                tg(tg_result(cur))
-                state["sonuc"] = cyc
         save(OUT, cur)
         save(STATE, state)
         print("Kupon kilitli (son oynama geçti); sonuçlar güncellendi")
@@ -575,12 +536,6 @@ def main():
     for k in cur["kuponlar"]:
         k["dogru"], k["biten"] = count_hits(k["sec"], rows)
     save(OUT, cur)
-    if state.get("ilk") != cyc:
-        tg(tg_text(cur, "yeni program"))
-        state["ilk"] = cyc
-    elif state.get("son") != cyc and deadline - now < 8 * 3600:
-        tg(tg_text(cur, "son durum (sakat/ceza listeleri güncel)"))
-        state["son"] = cyc
     save(STATE, state)
     ok = sum(1 for r in rows if r["piyasa"])
     print(f"{cyc}. hafta: {len(rows)} maç, {ok} maçta oran, {sum(1 for r in rows if r['fs'])} Flashscore eşleşmesi")
