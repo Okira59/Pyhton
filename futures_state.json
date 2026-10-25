@@ -203,218 +203,12 @@
  },
  "history": [
   {
-   "t": 1792850100,
-   "kind": "SINYAL",
-   "sym": "INITUSDT",
-   "dp": 5,
-   "dir": 1,
-   "price": 0.1509
-  },
-  {
-   "t": 1792851000,
-   "kind": "SINYAL",
-   "sym": "NEARUSDT",
-   "dp": 4,
-   "dir": -1,
-   "price": 4.4233
-  },
-  {
-   "t": 1792851600,
-   "kind": "KAPAT",
-   "sym": "NEARUSDT",
-   "dp": 4,
-   "dir": -1,
-   "entry": 4.4233,
-   "exit": 4.290601,
-   "pct": 30.0,
-   "reason": "+%30 k\u00e2r hedefine ula\u015f\u0131ld\u0131"
-  },
-  {
-   "t": 1792851300,
-   "kind": "SINYAL",
-   "sym": "ADAUSDT",
-   "dp": 4,
-   "dir": -1,
-   "price": 0.2063
-  },
-  {
-   "t": 1792851300,
-   "kind": "SINYAL",
-   "sym": "SKHYNIXUSDT",
-   "dp": 2,
-   "dir": -1,
-   "price": 944.55
-  },
-  {
-   "t": 1792851300,
-   "kind": "SINYAL",
-   "sym": "LINKUSDT",
-   "dp": 3,
-   "dir": -1,
-   "price": 11.537
-  },
-  {
-   "t": 1792850400,
-   "kind": "SINYAL",
-   "sym": "FILUSDT",
-   "dp": 4,
-   "dir": -1,
-   "price": 0.9368
-  },
-  {
-   "t": 1792851600,
-   "kind": "KAPAT",
-   "sym": "INITUSDT",
-   "dp": 5,
-   "dir": 1,
-   "entry": 0.1509,
-   "exit": 0.147882,
-   "pct": -20.0,
-   "reason": "-%20 zarar durdur"
-  },
-  {
-   "t": 1792851000,
-   "kind": "SINYAL",
-   "sym": "RENDERUSDT",
-   "dp": 4,
-   "dir": -1,
-   "price": 1.6897
-  },
-  {
-   "t": 1792852800,
-   "kind": "SINYAL",
-   "sym": "KORUUSDT",
-   "dp": 3,
-   "dir": -1,
-   "price": 10.414
-  },
-  {
-   "t": 1792852800,
-   "kind": "SINYAL",
-   "sym": "SAMSUNGUSDT",
-   "dp": 2,
-   "dir": -1,
-   "price": 160.72
-  },
-  {
-   "t": 1792853400,
-   "kind": "SINYAL",
-   "sym": "ETHUSDT",
-   "dp": 2,
-   "dir": -1,
-   "price": 2345.06
-  },
-  {
-   "t": 1792853400,
-   "kind": "SINYAL",
-   "sym": "UNIUSDT",
-   "dp": 3,
-   "dir": -1,
-   "price": 6.703
-  },
-  {
-   "t": 1792853700,
-   "kind": "SINYAL",
-   "sym": "NEARUSDT",
-   "dp": 4,
-   "dir": -1,
-   "price": 4.3703
-  },
-  {
-   "t": 1792853700,
-   "kind": "SINYAL",
-   "sym": "SUIUSDT",
-   "dp": 4,
-   "dir": -1,
-   "price": 0.9272
-  },
-  {
-   "t": 1792855200,
-   "kind": "SINYAL",
-   "sym": "SOXLUSDT",
-   "dp": 2,
-   "dir": -1,
-   "price": 82.62
-  },
-  {
-   "t": 1792855200,
-   "kind": "SINYAL",
-   "sym": "SOXSUSDT",
-   "dp": 3,
-   "dir": 1,
-   "price": 53.238
-  },
-  {
-   "t": 1792855500,
-   "kind": "KAPAT",
-   "sym": "SOXLUSDT",
-   "dp": 2,
-   "dir": -1,
-   "entry": 82.62,
-   "exit": 84.2724,
-   "pct": -20.0,
-   "reason": "-%20 zarar durdur",
-   "usd": -4.0
-  },
-  {
-   "t": 1792855500,
-   "kind": "KAPAT",
-   "sym": "SOXSUSDT",
-   "dp": 3,
-   "dir": 1,
-   "entry": 53.238,
-   "exit": 52.17324,
-   "pct": -20.0,
-   "reason": "-%20 zarar durdur",
-   "usd": -4.0
-  },
-  {
-   "t": 1792855800,
-   "kind": "SINYAL",
-   "sym": "TIAUSDT",
-   "dp": 4,
-   "dir": -1,
-   "price": 0.5256
-  },
-  {
-   "t": 1792855800,
-   "kind": "SINYAL",
-   "sym": "DOODUSDT",
-   "dp": 6,
-   "dir": -1,
-   "price": 0.001525
-  },
-  {
-   "t": 1792857900,
-   "kind": "KAPAT",
-   "sym": "DOODUSDT",
-   "dp": 6,
-   "dir": -1,
-   "entry": 0.001525,
-   "exit": 0.0015555,
-   "pct": -20.0,
-   "reason": "-%20 zarar durdur",
-   "usd": -4.0
-  },
-  {
    "t": 1792862700,
    "kind": "SINYAL",
    "sym": "CBRSUSDT",
    "dp": 2,
    "dir": 1,
    "price": 110.86
-  },
-  {
-   "t": 1792884900,
-   "kind": "KAPAT",
-   "sym": "TIAUSDT",
-   "dp": 4,
-   "dir": -1,
-   "entry": 0.5256,
-   "exit": 0.5361119999999999,
-   "pct": -20.0,
-   "reason": "-%20 zarar durdur",
-   "usd": -4.0
   },
   {
    "t": 1792887300,
@@ -445,18 +239,6 @@
    "price": 951.75
   },
   {
-   "t": 1792889400,
-   "kind": "KAPAT",
-   "sym": "RENDERUSDT",
-   "dp": 4,
-   "dir": -1,
-   "entry": 1.6897,
-   "exit": 1.723494,
-   "pct": -20.0,
-   "reason": "-%20 zarar durdur",
-   "usd": -4.0
-  },
-  {
    "t": 1792890900,
    "kind": "SINYAL",
    "sym": "SKHYUSDT",
@@ -465,36 +247,12 @@
    "price": 137.99
   },
   {
-   "t": 1792929300,
-   "kind": "KAPAT",
-   "sym": "ADAUSDT",
-   "dp": 4,
-   "dir": -1,
-   "entry": 0.2063,
-   "exit": 0.20503,
-   "pct": 6.16,
-   "reason": "\u0130z s\u00fcren stop (zirve k\u00e2r +%20.8)",
-   "usd": 1.23
-  },
-  {
    "t": 1792929600,
    "kind": "SINYAL",
    "sym": "MUUSDT",
    "dp": 2,
    "dir": 1,
    "price": 889.94
-  },
-  {
-   "t": 1792930200,
-   "kind": "KAPAT",
-   "sym": "FILUSDT",
-   "dp": 4,
-   "dir": -1,
-   "entry": 0.9368,
-   "exit": 0.9188795,
-   "pct": 19.13,
-   "reason": "\u0130z s\u00fcren stop (zirve k\u00e2r +%33.6)",
-   "usd": 3.83
   },
   {
    "t": 1792931100,
