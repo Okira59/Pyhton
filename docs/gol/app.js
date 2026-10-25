@@ -258,6 +258,47 @@ function renderListe() {
   $("#lf").value = fl;
 }
 
+// ---------- kuponlar ----------
+let KUPON = null;
+const fmtT = (ts) => new Date(ts * 1000).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+function couponCard(c, top) {
+  const st = { "kazandı": ["win", "pos", "TUTTU"], "kaybetti": ["lose", "neg", "YATTI"], "sonuçsuz": ["", "", "Sonuçsuz"] }[c.status] || ["", "", "Bekliyor"];
+  let h = `<div class="cp ${st[0]} ${top ? "top" : ""}"><div class="cp-h">
+    <span class="tag ${c.kind === "yuksek" ? "y" : ""}">${c.kind === "yuksek" ? "Günlük yüksek oran" : "4 saatlik"} · ${c.legs.length}'lü</span>
+    <span>Toplam oran <span class="big">${c.odd.toFixed(2)}</span></span>
+    <span>Tutma olasılığı <span class="big" ${heat(c.p * 100, c.kind === "yuksek" ? 15 : 35)}>%${f1(c.p * 100)}</span></span>
+    <span class="note" style="margin:0">Hazırlandı: ${fmtT(c.created)}</span>
+    <span class="st ${st[1]}">${st[2]}</span></div>
+    <div class="scroll"><table><tr><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th class="l">Tahmin</th><th>Oran</th><th>Olasılık</th><th>Oranın ima ettiği</th><th>Skor (İY / MS)</th></tr>`;
+  for (const l of c.legs) {
+    const r = l.r === true ? `<span class="pos">✓</span>` : l.r === false ? `<span class="neg">✗</span>` : "";
+    h += `<tr><td>${fmtT(l.ts)}</td><td class="l">${esc(l.lg)}</td><td class="l">${esc(l.h)} - ${esc(l.a)}</td><td class="l"><b>${esc(l.pick)}</b></td>
+      <td>${l.odd.toFixed(2)}</td><td>%${f1(l.p * 100)}</td><td>%${f1(l.p0 * 100)}</td><td>${l.score ? esc(l.score) + " " + r : "-"}</td></tr>`;
+  }
+  return h + "</table></div></div>";
+}
+function renderKupon() {
+  const el = $("#tab-kupon");
+  if (!KUPON) { el.innerHTML = `<p class="note">Kupon verisi yükleniyor...</p>`; return; }
+  const all = KUPON.coupons || [];
+  const now = Date.now() / 1000;
+  const active = all.filter((c) => c.status === "bekliyor" && Math.max(...c.legs.map((l) => l.ts)) + 2.5 * 3600 > now);
+  const done = all.filter((c) => c.status === "kazandı" || c.status === "kaybetti");
+  let h = `<p class="note">Kuponlar iddaa bültenindeki oranlardan otomatik hazırlanır: <b>4 saatte bir</b> önümüzdeki 12 saatin maçlarından 3'lü ve 4'lü kuponlar, <b>günde bir kez</b> (09:00 sonrası) o günün maçlarından 2-3 maçlık yüksek oranlı kuponlar.
+    Olasılık: oranın ima ettiği olasılık, son 3 ayda aynı oran seviyesindeki maçların gerçek sonuçlarına göre düzeltilir. Son güncelleme: ${fmtT(KUPON.updated)}</p>`;
+  const sum = (kind) => { const d = done.filter((c) => c.kind === kind); const w = d.filter((c) => c.status === "kazandı"); const ret = w.reduce((s, c) => s + c.odd, 0);
+    return `<div class="card"><div class="t">${kind === "yuksek" ? "Yüksek oranlı" : "4 saatlik"} kuponlar (sonuçlanan)</div><div class="v">${w.length} / ${d.length}</div><div class="s">${d.length ? `tutma %${f1((100 * w.length) / d.length)} · 1 birim başına getiri ${(ret / d.length).toFixed(2)}` : "henüz sonuçlanan yok"}</div></div>`; };
+  h += `<div class="cards">${sum("kisa")}${sum("yuksek")}</div>`;
+  h += `<h2>Aktif kuponlar <span class="note">(tutma olasılığı en yüksek olan en altta)</span></h2>`;
+  if (!active.length) h += `<p class="note">Şu an bekleyen kupon yok. Bir sonraki güncellemede hazırlanacak.</p>`;
+  const sorted = active.slice().sort((a, b) => a.p - b.p);
+  sorted.forEach((c, i) => (h += couponCard(c, i === sorted.length - 1)));
+  const past = all.filter((c) => !active.includes(c)).sort((a, b) => b.created - a.created).slice(0, 40);
+  if (past.length) { h += `<h2>Geçmiş kuponlar (son 40)</h2>`; past.forEach((c) => (h += couponCard(c, false))); }
+  h += `<p class="note">Uyarı: Geçmiş testte (son 45 gün, 1xBet oranları) model olasılıkları gerçekleşenle uyumluydu ama kuponların uzun vadede kâr ettiği görülmedi. Bahis şirketinin marjı nedeniyle kâr garantisi yoktur.</p>`;
+  el.innerHTML = h;
+}
+
 // ---------- filtre & olaylar ----------
 function applyFilters() {
   const src = $("#f-src").value, days = +$("#f-days").value, lg = $("#f-lg").value;
@@ -274,9 +315,10 @@ function renderAll() {
   if (!VIEW.length) {
     const msg = `<p class="note">Bu filtrede maç yok.${$("#f-src").value === "iddaa" ? " iddaa oranları bu uygulama çalıştıkça birikir; ilk günlerde az veri olması normaldir." : ""}</p>`;
     ["ozet", "ust", "iy", "iyms", "liste"].forEach((t) => ($("#tab-" + t).innerHTML = msg));
+    renderKupon();
     return;
   }
-  renderOzet(); renderUst(); renderIy(); renderIyms(); renderListe();
+  renderOzet(); renderUst(); renderIy(); renderIyms(); renderListe(); renderKupon();
 }
 
 function showTab(t) {
@@ -314,3 +356,5 @@ fetch("data/matches.json?" + Date.now()).then((r) => r.json()).then((d) => {
   $("#meta").textContent = `Son güncelleme: ${new Date(d.updated * 1000).toLocaleString("tr-TR")} · Flashscore: ${fs} maç · iddaa: ${id} maç`;
   applyFilters();
 }).catch(() => { $("#meta").textContent = "Veri yüklenemedi (data/matches.json)"; });
+fetch("data/kuponlar.json?" + Date.now()).then((r) => r.json()).then((d) => { KUPON = d; renderKupon(); })
+  .catch(() => { KUPON = { coupons: [], updated: 0 }; renderKupon(); });

@@ -47,6 +47,9 @@ jobs:
       - name: Panel verisi
         if: steps.gate.outputs.run
         run: python -u gol/build.py docs/gol/data/matches.json
+      - name: Kuponlar
+        if: steps.gate.outputs.run
+        run: python -u gol/kupon.py
       - name: Kaydet
         if: steps.gate.outputs.run
         run: |
