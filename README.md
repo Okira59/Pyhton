@@ -11,7 +11,7 @@
 | StochRSI (14/14/3/3) | %K > %D ve %K < 80 | %K < %D ve %K > 20 |
 
 **Kâr al (KAPAT) sinyali:** Bir AL/SAT sinyalinden sonra fiyat giriş fiyatından `TP_PIPS` (varsayılan 10) pip kâra ulaşınca
-"İŞLEMİ KAPAT" bildirimi gönderilir. Altında 1 pip = `PIP_SIZE` = 1 $ kabul edilir (10 pip = 10 $).
+"İŞLEMİ KAPAT" bildirimi gönderilir. Altında 1 pip = `PIP_SIZE` = 1 $ kabul edilir (20 pip = 20 $).
 Değiştirmek için `bot.py` içindeki ayarları ya da `TP_PIPS` / `PIP_SIZE` ortam değişkenlerini kullanın.
 Yeni bir sinyal gelirse açık işlemin yerini alır.
 
@@ -56,7 +56,7 @@ GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
 ## İkinci bot: Dip-Tavan (dip_tavan.py)
 15dk, 30dk, 45dk ve 1s grafiklerde EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD(12,26,9) ve Hacim(20)
 ile dip (🟢 AL) ve tavan (🔴 SAT) arar. Sinyal için: 15dk'da 6 koşuldan en az 4'ü, 30dk/45dk/1s'den en az ikisinde en az 2 koşul.
-İşlem +10 pip ($10) kâra ulaşınca, -20 pip ($20) zarara ulaşınca (zarar durdur) ya da ters sinyal gelince kapanır;
+İşlem +20 pip ($20) kâra ulaşınca, -20 pip ($20) zarara ulaşınca (zarar durdur) ya da ters sinyal gelince kapanır;
 kapanış mesajında kâr/zarar yüzdesi yazar. Ayarlar: `TP_PIPS`, `SL_PIPS`, `PIP_SIZE`.
 ```bash
 python dip_tavan.py            # son durum

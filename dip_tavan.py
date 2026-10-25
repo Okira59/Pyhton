@@ -26,7 +26,7 @@ LOOKBACK = 3            # dip/tavan koşulları son 3 mum içinde aranır
 MIN_SCORE_15M = 4       # 15dk'da 6 göstergeden en az 4'ü dip/tavan demeli
 MIN_SCORE_HIGHER = 2    # 30dk/45dk/1s'den en az ikisinde en az 2 gösterge onaylamalı
 
-TP_PIPS = float(os.getenv("TP_PIPS", "10"))
+TP_PIPS = float(os.getenv("TP_PIPS", "20"))
 SL_PIPS = float(os.getenv("SL_PIPS", "20"))  # zarar durdur
 PIP_SIZE = float(os.getenv("PIP_SIZE", "1.0"))  # altında 1 pip = 1 $
 
