@@ -1,0 +1,59 @@
+name: Spor Toto Analiz
+
+# GitHub cron bu repoda güvenilir çalışmadığı için futures botu (cron-job.org ile
+# 5 dk'da bir tetiklenen) bittikten sonra da tetiklenir; 3 saatte bir gerçekten çalışır.
+on:
+  schedule:
+    - cron: "40 */3 * * *"
+  workflow_run:
+    workflows: ["Altin Futures Botu"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: toto
+  cancel-in-progress: false
+
+jobs:
+  guncelle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zaman kontrolü (3 saatte bir)
+        id: gate
+        run: |
+          last=$(python3 -c "import json;print(json.load(open('docs/toto/data/toto.json'))['guncelleme'])" 2>/dev/null || echo 0)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ $(( $(date +%s) - last )) -ge 10500 ]; then
+            echo "run=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "Son güncelleme yakın zamanda, atlanıyor."
+          fi
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run
+        with:
+          python-version: "3.11"
+      - if: steps.gate.outputs.run
+        run: pip install requests numpy
+      - name: Spor Toto analizi
+        if: steps.gate.outputs.run
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
+        run: cd toto && python -u toto.py
+      - name: Kaydet
+        if: steps.gate.outputs.run
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add toto/data docs/toto/data
+          git diff --cached --quiet && exit 0
+          git commit -m "Spor Toto verisi güncellendi [skip ci]"
+          for i in 1 2 3 4 5; do
+            git pull --rebase -X theirs && git push && exit 0
+            sleep $((i * 5))
+          done
+          exit 1

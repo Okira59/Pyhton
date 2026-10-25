@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spor Toto Analiz</title><meta name="theme-color" content="#0f172a"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg">
+<style>
+:root{--bg:#0f172a;--card:#1e293b;--mut:#94a3b8;--fg:#e2e8f0;--g:#22c55e;--y:#eab308;--r:#ef4444;--b:#3b82f6}
+*{box-sizing:border-box}body{margin:0;font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
+header{padding:14px 14px 6px}h1{font-size:19px;margin:0}.mut{color:var(--mut);font-size:12px}
+nav{display:flex;gap:6px;padding:6px 14px;position:sticky;top:0;background:var(--bg);z-index:2;overflow-x:auto}
+nav button{flex:1;background:var(--card);color:var(--fg);border:0;border-radius:10px;padding:9px 10px;font-weight:600;white-space:nowrap}
+nav button.on{background:var(--g);color:#052e16}main{padding:6px 14px 40px;max-width:760px;margin:auto}
+.card{background:var(--card);border-radius:14px;padding:12px;margin:10px 0}.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.no{background:#334155;border-radius:8px;min-width:26px;text-align:center;font-weight:700;padding:2px 4px}.t{font-weight:600}
+.bar{display:flex;height:24px;border-radius:7px;overflow:hidden;margin-top:8px;font-size:12px;font-weight:700}
+.bar div{display:flex;align-items:center;justify-content:center;color:#0b1220;min-width:24px}
+.b1{background:#60a5fa}.b0{background:#cbd5e1}.b2{background:#f472b6}.pick{outline:3px solid var(--g);outline-offset:-3px}
+.tag{display:inline-block;background:#422006;color:#fde68a;border-radius:6px;padding:2px 6px;margin:6px 4px 0 0;font-size:12px}
+details{margin-top:8px}summary{cursor:pointer;color:var(--b);font-size:13px}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+td,th{padding:4px;border-bottom:1px solid #334155;text-align:center}th{color:var(--mut);font-weight:500}td:first-child,th:first-child{text-align:left}
+.sel{display:grid;grid-template-columns:repeat(15,1fr);gap:3px;margin-top:8px}.sel span{background:#334155;border-radius:6px;text-align:center;padding:5px 0;font-weight:700;font-size:12px}
+.sel span.d{background:#854d0e}.sel span.tr{background:#7f1d1d}.sel span.ok{box-shadow:inset 0 -3px var(--g)}.sel span.no{box-shadow:inset 0 -3px var(--r)}
+.big{font-size:22px;font-weight:800}.g{color:var(--g)}.r{color:var(--r)}.f{display:inline-block;width:17px;height:17px;border-radius:4px;font-size:11px;text-align:center;line-height:17px;margin-right:2px;color:#000;font-weight:700}
+.fw{background:#22c55e}.fd{background:#cbd5e1}.fl{background:#ef4444}ul{margin:4px 0;padding-left:18px}
+</style></head><body>
+<header><h1>⚽ Spor Toto Analiz <a href="../" style="font-size:12px;font-weight:400;color:#94a3b8;margin-left:8px">← Diğer paneller</a></h1><div class="mut" id="meta">Yükleniyor…</div></header>
+<nav><button data-v="mac" class="on">Maçlar</button><button data-v="kupon">Kuponlar</button><button data-v="gecmis">Geçmiş</button><button data-v="bilgi">Nasıl?</button></nav>
+<main id="app"></main>
+<script>
+const O=["1","0","2"],pc=x=>x==null?"-":(x*100).toFixed(x<0.01?2:x<0.1?1:0)+"%",tl=n=>n.toLocaleString("tr-TR")+" TL";
+const dt=t=>new Date(t*1000).toLocaleString("tr-TR",{weekday:"short",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+let D,H,B,V="mac";
+async function j(u){try{const r=await fetch(u+"?t="+Date.now());return r.ok?r.json():null}catch(e){return null}}
+function bar(p,w){const b=p.indexOf(Math.max(...p));return `<div class="bar">${p.map((x,i)=>`<div class="b${O[i]} ${w!=null?(O[i]==w?"pick":""):(i==b?"pick":"")}" style="width:${x*100}%">${x<0.13?Math.round(x*100):O[i]+" "+pc(x)}</div>`).join("")}</div>`}
+function form(l){return (l||[]).map(x=>`<span class="f f${({w:"w",d:"d",l:"l"})[x.r]||"d"}" title="${x.ev} ${x.s} ${x.dep}">${({w:"G",d:"B",l:"M"})[x.r]||"?"}</span>`).join("")}
+function eksik(l){if(!l||!l.length)return "<i class=mut>yok</i>";return "<ul>"+l.map(x=>`<li>${x.n} <span class=mut>(${x.s?"şüpheli: ":""}${x.r})</span></li>`).join("")+"</ul>"}
+function mac(r){const o=r.oran||{},rows=[["Bet365","bet365"],["William Hill","williamhill"],["iddaa","iddaa"],["Diğer siteler ort.","diger"]].filter(x=>o[x[1]]);
+const w=r.hava,f=r.form,e=r.eksik||{},sk=r.skor;
+return `<div class="card"><div class="row"><span class="no">${r.no}</span><div style="flex:1"><div class="t">${r.ev} – ${r.dep}</div><div class="mut">${r.lig} · ${dt(r.ts)}${r.bilgi&&r.bilgi.stad?" · "+r.bilgi.stad:""}</div></div>${r.kazanan!=null?`<span class="big ${r.kazanan==O[r.p.indexOf(Math.max(...r.p))]?"g":"r"}">${r.sonuc||""} <small>(${r.kazanan})</small></span>`:""}</div>
+${bar(r.p,r.kazanan)}${(r.notlar||[]).map(n=>`<span class="tag">⚠️ ${n}</span>`).join("")}
+<details><summary>Detaylar</summary>
+<table><tr><th>Kaynak</th><th>1</th><th>0</th><th>2</th></tr>${rows.map(([n,k])=>`<tr><td>${n}</td>${o[k].o.map(x=>`<td>${x.toFixed(2)}</td>`).join("")}</tr>`).join("")}
+${r.piyasa?`<tr><td>Piyasa olasılığı</td>${r.piyasa.map(x=>`<td>${pc(x)}</td>`).join("")}</tr>`:""}<tr><td><b>Model</b></td>${r.p.map(x=>`<td><b>${pc(x)}</b></td>`).join("")}</tr>
+${r.halk&&r.halk[0]!=null?`<tr><td>Halkın tercihi</td>${r.halk.map(x=>`<td>%${x}</td>`).join("")}</tr>`:""}</table>
+${f?`<div style="margin-top:8px"><b>Form (son 5)</b><div>${r.ev}: ${form(f.h)}</div><div>${r.dep}: ${form(f.a)}</div>${f.h2h&&f.h2h.length?`<div class=mut style="margin-top:4px">Aralarındaki son maçlar: ${f.h2h.map(x=>`${x.ev} ${x.s} ${x.dep}`).join(" · ")}</div>`:""}</div>`:""}
+<div style="margin-top:8px"><b>Eksik oyuncular</b> <span class=mut>(sakat / cezalı / şüpheli)</span><div>${r.ev}: ${eksik(e.h)}</div><div>${r.dep}: ${eksik(e.a)}</div>${r.eksik?"":"<div class=mut>Liste henüz yayınlanmadı (genelde maça 1-3 gün kala dolar)</div>"}</div>
+<div style="margin-top:8px"><b>Hava</b>: ${w?`${w.durum}, ${Math.round(w.t)}°C, yağış ${w.yagis} mm (olasılık %${w.yagis_ol??"-"}), rüzgar ${Math.round(w.ruzgar)} km/s`+(r.bilgi&&r.bilgi.sehir?` <span class=mut>(${r.bilgi.sehir})</span>`:""):"<span class=mut>tahmin yok (maça 15 günden fazla var ya da şehir bulunamadı)</span>"}</div>
+${sk&&sk.length?`<div style="margin-top:8px"><b>Olası skorlar</b>: ${sk.map(x=>`${x[0]} <span class=mut>${pc(x[1])}</span>`).join(" · ")}</div>`:""}
+</details></div>`}
+function kupon(k,ms,i){const sp=k.sec.map((s,i)=>{const w=ms&&ms[i].kazanan;return `<span class="${s.length==2?"d":s.length==3?"tr":""} ${w!=null?(s.includes(w)?"ok":"no"):""}">${s}</span>`}).join("");
+return `<div class="card"><div class="row"><div><div class="t">${k.kolon==1?"Tek kolon (en olası sonuçlar)":k.kolon+" kolon"}</div><div class="mut">${tl(k.tutar)} · ${k.sec.filter(s=>s.length==2).length} çift, ${k.sec.filter(s=>s.length==3).length} üçlü</div></div>
+<div style="text-align:right"><div class="big g">${pc(k.p15)}</div><div class="mut">15/15 bilme</div></div></div><div class="sel">${sp}</div>
+<table><tr><th>12+ bilme</th><th>13+</th><th>14+</th><th>Ort. doğru</th>${k.biten?"<th>Sonuç</th>":""}</tr><tr><td>${pc(k.p12)}</td><td>${pc(k.p13)}</td><td>${pc(k.p14)}</td><td>${k.beklenen.toFixed(1)}</td>${k.biten?`<td><b>${k.dogru}/${k.biten}</b></td>`:""}</tr></table></div>`}
+function render(){const a=document.getElementById("app");if(!D){a.innerHTML='<div class="card">Veri henüz yok.</div>';return}
+if(V=="mac")a.innerHTML=D.maclar.map(mac).join("");
+if(V=="kupon")a.innerHTML=`<div class="card mut">Her bütçe için 15 maçın tamamını bilme olasılığını en yükselten tek/çift/üçlü dağılımı. Sarı = çift, kırmızı = üçlü (sistem). Kolon fiyatı ${D.kolon_fiyat} TL. Olasılıklar tahmindir, garanti değildir.</div>`+D.kuponlar.map(k=>kupon(k,D.maclar)).join("")+(B?bt():"");
+if(V=="gecmis")a.innerHTML=(H&&H.haftalar.length?H.haftalar.slice().reverse().map(h=>`<div class="card"><div class="t">${h.hafta}. hafta <span class=mut>${h.ad||""}</span></div><div class="mut">Sonuçlar: ${h.maclar.map(m=>m.kazanan??"?").join(" ")}</div></div>`+h.kuponlar.map(k=>kupon(k,h.maclar)).join("")).join(""):'<div class="card mut">Henüz sonuçlanan hafta yok. Hafta bitince kuponlar burada sonuçlarıyla görünür.</div>')+(B?bt():"");
+if(V=="bilgi")a.innerHTML=`<div class="card"><b>Nasıl çalışır?</b><ul>
+<li>Program her hafta iddaa Spor Toto servisinden otomatik çekilir; son oynama saatine kadar 3 saatte bir güncellenir.</li>
+<li>Oranlar: Bet365, William Hill (Flashscore üzerinden) ve iddaa. Marjları arındırılıp ortalaması alınır.</li>
+<li>Geçmiş ${B?B.hafta:51} Spor Toto haftasında (${B?B.mac:734} maç) test edildi: kapanış oranları en iyi tahminci; favoriyi hafif güçlendirip beraberliği hafif artıran bir düzeltme doğruluğu artırdı ve modele eklendi.</li>
+<li>Sakat/cezalı oyuncu ve hava durumunu olasılığa eklemek testte tahmini <b>kötüleştirdi</b> (oranlar bu bilgiyi zaten içeriyor). Bu yüzden bunlar ⚠️ uyarı olarak gösterilir, karar senin.</li>
+<li>Oranı olmayan maçlarda halkın tercih yüzdesi kullanılır (daha az güvenilir).</li>
+<li>Kuponlar: her bütçe için 15/15 olasılığını en yükselten çift/üçlü dağılımı tam hesaplanır.</li>
+<li>Bet365/William Hill/iddaa oranı henüz açılmamış maçlarda (Süper Lig oranları genelde maça 1-2 gün kala açılır) diğer sitelerin ortalaması kullanılır.</li></ul></div>
+<div class="card"><b>📱 Telefona kur</b><ul><li>Android: <a href="SporTotoAnaliz.apk" style="color:var(--g)">SporTotoAnaliz.apk indir</a> → aç → "bilinmeyen kaynaklara izin ver" → Yükle.</li>
+<li>iPhone / Android (APK'sız): bu sayfayı tarayıcıda aç → Paylaş / ⋮ menüsü → "Ana ekrana ekle".</li></ul></div>`+(B?bt():"")}
+function bt(){return `<div class="card"><b>Geçmiş test (${B.hafta} hafta)</b><table><tr><th>Kolon bütçesi</th><th>Ort. doğru</th><th>12+</th><th>13+</th><th>14+</th><th>15</th></tr>${B.butceler.map(b=>`<tr><td>≤${b.butce}</td><td>${b.ort}</td><td>${b.n12}</td><td>${b.n13}</td><td>${b.n14}</td><td>${b.n15}</td></tr>`).join("")}</table><div class="mut">Sayılar: kaç haftada o kadar doğru tutturulduğu.</div></div>`}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");V=b.dataset.v;render();scrollTo(0,0)});
+(async()=>{[D,H,B]=await Promise.all([j("data/toto.json"),j("data/gecmis.json"),j("data/backtest.json")]);
+document.getElementById("meta").textContent=D?`${D.hafta}. hafta · ${D.ad||""} · son oynama ${new Date(D.bitis).toLocaleString("tr-TR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · güncelleme ${dt(D.guncelleme)}${D.kilit?" · 🔒 kupon kilitlendi":""}`:"Veri yok";render()})();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
+</script></body></html>
