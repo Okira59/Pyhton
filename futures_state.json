@@ -203,34 +203,6 @@
  },
  "history": [
   {
-   "t": 1792862700,
-   "kind": "SINYAL",
-   "sym": "CBRSUSDT",
-   "dp": 2,
-   "dir": 1,
-   "price": 110.86
-  },
-  {
-   "t": 1792887300,
-   "kind": "SINYAL",
-   "sym": "AVAUSDT",
-   "dp": 4,
-   "dir": 1,
-   "price": 0.4318
-  },
-  {
-   "t": 1792888800,
-   "kind": "KAPAT",
-   "sym": "AVAUSDT",
-   "dp": 4,
-   "dir": 1,
-   "entry": 0.4318,
-   "exit": 0.423164,
-   "pct": -20.0,
-   "reason": "-%20 zarar durdur",
-   "usd": -4.0
-  },
-  {
    "t": 1792889100,
    "kind": "SINYAL",
    "sym": "SKHYNIXUSDT",
