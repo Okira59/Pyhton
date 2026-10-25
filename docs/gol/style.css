@@ -47,3 +47,8 @@ footer{padding:14px 20px;color:#64748b;font-size:12px;border-top:1px solid #1f29
 .cp table{margin:0}
 .cp.win{border-color:#166534}.cp.lose{border-color:#7f1d1d;opacity:.8}
 .cp.top{border-color:#facc15;box-shadow:0 0 0 1px #facc15 inset}
+.sks{display:flex;gap:14px;flex-wrap:wrap}
+.sk{flex:1;min-width:240px;background:#0b1220;border:1px solid #1f2937;border-radius:8px;padding:8px 10px}
+.sk .t{font-weight:600;margin-bottom:4px;color:#cbd5e1}
+.sk table{margin:0;width:100%}
+.skl tr.sel td{background:#1e293b}

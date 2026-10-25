@@ -1,7 +1,7 @@
 "use strict";
 const $ = (s) => document.querySelector(s);
 let ALL = [], VIEW = [];
-const state = { ustLine: "2.5", iyLine: "1.5", iymsT: "12", ustGroup: "line", iyGroup: "line", iymsGroup: "1", listN: 200 };
+const state = { ustLine: "2.5", iyLine: "1.5", iymsT: "12", ustGroup: "line", iyGroup: "line", iymsGroup: "1", listN: 200, skorId: null, skorBand: "all" };
 
 const EDGES = {
   fav: [1, 1.25, 1.4, 1.55, 1.7, 1.9, 2.2, 2.6, 99],
@@ -258,6 +258,56 @@ function renderListe() {
   $("#lf").value = fl;
 }
 
+// ---------- skorlar ----------
+let SKOR = null;
+const scoreCells = (arr, n) => arr.slice(0, n).map(([s, p]) => `<b>${s}</b> <span class="note">%${f1(p * 100)}</span>`).join(" &nbsp; ");
+function scoreBox(title, arr, r) {
+  let h = `<div class="sk"><div class="t">${title}</div><table>`;
+  arr.forEach(([s, p]) => (h += `<tr><td><b>${s}</b></td><td class="l"><span class="bar" style="width:${p * 300}px"></span>%${f1(p * 100)}</td></tr>`));
+  return h + `</table><div class="note">1: %${f1(r["1"] * 100)} · X: %${f1(r.X * 100)} · 2: %${f1(r["2"] * 100)}</div></div>`;
+}
+function scoreDist(list, fn, n) {
+  const c = {}; let t = 0;
+  for (const m of list) { const s = fn(m); if (s == null) continue; c[s] = (c[s] || 0) + 1; t++; }
+  const rows = Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, n);
+  let h = `<table><tr><th>Skor</th><th>Maç</th><th class="l">%</th></tr>`;
+  rows.forEach(([s, k]) => (h += `<tr><td><b>${s}</b></td><td>${k}</td><td class="l"><span class="bar" style="width:${(k / t) * 400}px"></span>%${f1((100 * k) / t)}</td></tr>`));
+  return h + `</table><div class="note">${t} maç</div>`;
+}
+function renderSkor() {
+  const el = $("#tab-skor");
+  let h = `<h2>Yaklaşan maçların skor olasılıkları <span class="note">(önümüzdeki 36 saat · satıra tıklayınca detay açılır)</span></h2>
+    <p class="note">Oranlardan (MS 1X2, alt/üst, İY 1X2, İY alt/üst) her takımın ilk yarı ve maç geneli beklenen golü hesaplanır, skorlar Poisson dağılımıyla bulunur. 2. yarı = maç geneli − ilk yarı.
+    Son 30 günün 1.586 maçında test edildi: olasılıklar gerçekleşenle uyumlu (ör. en olası MS skoru model %11,6 dedi, %12,3 tuttu). Tek bir skorun olasılığı genelde %10-15'i geçmez.</p>`;
+  const L = (SKOR && SKOR.matches) || [];
+  if (!L.length) h += `<p class="note">${SKOR ? "Şu an yaklaşan maç verisi yok." : "Yükleniyor..."}</p>`;
+  const sel = L.find((m) => m.id === state.skorId) || L[0];
+  if (sel) {
+    h += `<div class="cp top"><div class="cp-h"><span class="big">${esc(sel.h)} - ${esc(sel.a)}</span><span>${fmtT(sel.ts)} · ${esc(sel.lg)}</span>
+      <span class="note" style="margin:0">Beklenen gol: ${f2(sel.xg[0])} - ${f2(sel.xg[1])} · oran kaynağı: ${esc(sel.src)}</span></div>
+      <div class="sks">${scoreBox("İlk yarı skoru", sel.ht, sel.r.ht)}${scoreBox("2. yarı skoru (sadece 2. yarıda atılan goller)", sel.sh, sel.r.sh)}${scoreBox("Maç sonu skoru", sel.ft, sel.r.ft)}</div></div>`;
+  }
+  if (L.length) {
+    h += `<div class="scroll"><table class="skl"><tr><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th>Beklenen gol</th><th class="l">En olası İY skorları</th><th class="l">En olası 2. yarı skorları</th><th class="l">En olası MS skorları</th></tr>`;
+    for (const m of L) h += `<tr data-skor="${esc(m.id)}" style="cursor:pointer" class="${sel && m.id === sel.id ? "sel" : ""}"><td>${fmtT(m.ts)}</td><td class="l">${esc(m.lg)}</td><td class="l">${esc(m.h)} - ${esc(m.a)}</td><td>${f2(m.xg[0])} - ${f2(m.xg[1])}</td>
+      <td class="l">${scoreCells(m.ht, 2)}</td><td class="l">${scoreCells(m.sh, 2)}</td><td class="l">${scoreCells(m.ft, 2)}</td></tr>`;
+    h += `</table></div>`;
+  }
+  const e = EDGES["1"], b = state.skorBand;
+  const list = VIEW.filter((m) => { if (b === "all") return true; const v = odd(m, "1"); return v && v >= e[+b] && v < e[+b + 1]; });
+  h += `<h2>Geçmiş maçlarda en sık skorlar <span class="note">(üstteki filtrelere göre · MS 1 oranı aralığı seç)</span></h2>
+    ${pills([["all", "Hepsi"], ...e.slice(0, -1).map((_, i) => [String(i), bucketLabel(e, i)])], b, "skband")}
+    <div class="sks"><div class="sk"><div class="t">İlk yarı skoru</div>${scoreDist(list, (m) => (m.hh == null ? null : `${m.hh}-${m.ha}`), 10)}</div>
+    <div class="sk"><div class="t">2. yarı skoru</div>${scoreDist(list, (m) => (m.hh == null ? null : `${m.fh - m.hh}-${m.fa - m.ha}`), 10)}</div>
+    <div class="sk"><div class="t">Maç sonu skoru</div>${scoreDist(list, (m) => `${m.fh}-${m.fa}`, 12)}</div></div>`;
+  el.innerHTML = h;
+  el.onclick = (ev) => {
+    const tr = ev.target.closest("[data-skor]"), bb = ev.target.closest("[data-skband]");
+    if (tr) { state.skorId = tr.dataset.skor; renderSkor(); el.scrollIntoView({ behavior: "smooth" }); }
+    if (bb) { state.skorBand = bb.dataset.skband; renderSkor(); }
+  };
+}
+
 // ---------- kuponlar ----------
 let KUPON = null;
 const fmtT = (ts) => new Date(ts * 1000).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -327,10 +377,10 @@ function renderAll() {
   if (!VIEW.length) {
     const msg = `<p class="note">Bu filtrede maç yok.${$("#f-src").value === "iddaa" ? " iddaa oranları bu uygulama çalıştıkça birikir; ilk günlerde az veri olması normaldir." : ""}</p>`;
     ["ozet", "ust", "iy", "iyms", "liste"].forEach((t) => ($("#tab-" + t).innerHTML = msg));
-    renderKupon();
+    renderKupon(); renderSkor();
     return;
   }
-  renderOzet(); renderUst(); renderIy(); renderIyms(); renderListe(); renderKupon();
+  renderOzet(); renderUst(); renderIy(); renderIyms(); renderListe(); renderKupon(); renderSkor();
 }
 
 function showTab(t) {
@@ -368,5 +418,9 @@ fetch("data/matches.json?" + Date.now()).then((r) => r.json()).then((d) => {
   $("#meta").textContent = `Son güncelleme: ${new Date(d.updated * 1000).toLocaleString("tr-TR")} · Flashscore: ${fs} maç · iddaa: ${id} maç`;
   applyFilters();
 }).catch(() => { $("#meta").textContent = "Veri yüklenemedi (data/matches.json)"; });
+fetch("data/skorlar.json?" + Date.now())
+  .then((r) => r.json())
+  .then((d) => { SKOR = d; renderSkor(); })
+  .catch(() => { SKOR = { matches: [] }; renderSkor(); });
 fetch("data/kuponlar.json?" + Date.now()).then((r) => r.json()).then((d) => { KUPON = d; renderKupon(); })
   .catch(() => { KUPON = { coupons: [], updated: 0 }; renderKupon(); });

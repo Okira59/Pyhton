@@ -53,6 +53,9 @@ jobs:
       - name: Kuponlar
         if: steps.gate.outputs.run
         run: python -u gol/kupon.py
+      - name: Skor olasılıkları
+        if: steps.gate.outputs.run
+        run: pip install numpy && python -u gol/skor.py
       - name: Kaydet
         if: steps.gate.outputs.run
         run: |
