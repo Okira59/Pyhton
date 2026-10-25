@@ -347,7 +347,7 @@ function couponCard(c, top) {
     <div class="scroll"><table><tr><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th class="l">Tahmin</th><th>Oran</th><th>Olasılık</th><th>Oranın ima ettiği</th><th>Skor (İY / MS)</th></tr>`;
   for (const l of c.legs) {
     const r = l.r === true ? `<span class="pos">✓</span>` : l.r === false ? `<span class="neg">✗</span>` : "";
-    h += `<tr><td>${fmtT(l.ts)}</td><td class="l">${esc(l.lg)}</td><td class="l">${esc(l.h)} - ${esc(l.a)}</td><td class="l"><b>${esc(l.pick)}</b></td>
+    h += `<tr><td>${fmtT(l.ts)}</td><td class="l">${esc(l.lg)}</td><td class="l">${esc(l.h)} - ${esc(l.a)}</td><td class="l"><b>${esc(l.pick)}</b>${l.bk && l.bk !== "iddaa" ? ` <span class="note">(${esc(l.bk)})</span>` : ""}</td>
       <td>${l.odd.toFixed(2)}</td><td>%${f1(l.p * 100)}</td><td>%${f1(l.p0 * 100)}</td><td>${l.score ? esc(l.score) + " " + r : "-"}</td></tr>`;
   }
   return h + "</table></div></div>";
@@ -360,7 +360,7 @@ function renderKupon() {
   const active = all.filter((c) => c.status === "bekliyor" && Math.max(...c.legs.map((l) => l.ts)) + 2.5 * 3600 > now);
   const done = all.filter((c) => c.status === "kazandı" || c.status === "kaybetti");
   let h = `<p class="note">Kuponlar iddaa bültenindeki oranlardan otomatik hazırlanır: <b>4 saatte bir</b> önümüzdeki 12 saatin maçlarından 3'lü ve 4'lü kuponlar, <b>günde bir kez</b> (09:00 sonrası) o günün maçlarından 2-3 maçlık yüksek oranlı kuponlar, 5'li ve 6'lı günlük kuponlar ve 5-6 maçlık skor kuponları.
-    <b>İY/MS kuponları</b> aynı zamanlamayla hazırlanır; iddaa İY/MS oranını çoğu maçta yayınlamadığı için bunlarda Flashscore'daki 1xBet oranları kullanılır.
+    Tüm kuponlar <b>sadece iddaa'daki maçlardan</b>, iddaa oranlarıyla kurulur. <b>İY/MS kuponları</b> aynı zamanlamayla hazırlanır; iddaa bir maçın İY/MS oranını yayınlamamışsa aynı maçın Bet365 / William Hill oranı kullanılır (tabloda belirtilir).
     Olasılık: oranın ima ettiği olasılık, son 3 ayda aynı oran seviyesindeki maçların gerçek sonuçlarına göre düzeltilir. Son güncelleme: ${fmtT(KUPON.updated)}</p>`;
   const sum = (kind) => { const d = done.filter((c) => c.kind === kind); const w = d.filter((c) => c.status === "kazandı"); const ret = w.reduce((s, c) => s + c.odd, 0);
     return `<div class="card"><div class="t">${KIND[kind]} kuponlar (sonuçlanan)</div><div class="v">${w.length} / ${d.length}</div><div class="s">${d.length ? `tutma %${f1((100 * w.length) / d.length)} · 1 birim başına getiri ${(ret / d.length).toFixed(2)}` : "henüz sonuçlanan yok"}</div></div>`; };
@@ -382,7 +382,7 @@ function renderKupon() {
   if (rest.length) { h += `<h2>Diğer aktif kuponlar <span class="note">(tutma olasılığı yüksekten düşüğe)</span></h2>`; rest.forEach((c) => (h += couponCard(c, false))); }
   const top = KUPON.iyms_top || {};
   if (Object.keys(top).length) {
-    h += `<h2>İY/MS seçenekleri: önümüzdeki 36 saatin en olası maçları <span class="note">(Flashscore / 1xBet oranları)</span></h2><div class="scroll"><table><tr><th class="l">Seçenek</th><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th>Oran</th><th>Olasılık</th><th>Oranın ima ettiği</th></tr>`;
+    h += `<h2>İY/MS seçenekleri: önümüzdeki 36 saatin en olası maçları <span class="note">(iddaa maçları; iddaa oranı yoksa Bet365 / William Hill)</span></h2><div class="scroll"><table><tr><th class="l">Seçenek</th><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th>Oran</th><th>Olasılık</th><th>Oranın ima ettiği</th></tr>`;
     for (const [k, rows] of Object.entries(top)) {
       if (!rows.length) { h += `<tr><td class="l"><b>${esc(k)}</b></td><td colspan="6" class="note">uygun maç yok</td></tr>`; continue; }
       rows.forEach((l, i) => (h += `<tr><td class="l">${i ? "" : `<b>${esc(k)}</b>`}</td><td>${fmtT(l.ts)}</td><td class="l">${esc(l.lg)}</td><td class="l">${esc(l.h)} - ${esc(l.a)}</td><td>${l.odd.toFixed(2)}</td><td>%${f1(l.p * 100)}</td><td>%${f1(l.p0 * 100)}</td></tr>`));
@@ -391,7 +391,7 @@ function renderKupon() {
   }
   const past = all.filter((c) => !active.includes(c)).sort((a, b) => b.created - a.created).slice(0, 40);
   if (past.length) { h += `<h2>Geçmiş kuponlar (son 40)</h2>`; past.forEach((c) => (h += couponCard(c, false))); }
-  h += `<p class="note">Uyarı: Geçmiş testte (son 45 gün, 1xBet oranları) model olasılıkları gerçekleşenle uyumluydu ama kuponların uzun vadede kâr ettiği görülmedi. Bahis şirketinin marjı nedeniyle kâr garantisi yoktur.</p>`;
+  h += `<p class="note">Uyarı: Geçmiş testte (son 45 gün) model olasılıkları gerçekleşenle uyumluydu ama kuponların uzun vadede kâr ettiği görülmedi. Bahis şirketinin marjı nedeniyle kâr garantisi yoktur.</p>`;
   el.innerHTML = h;
 }
 
@@ -449,7 +449,7 @@ document.addEventListener("input", (e) => {
 fetch("data/matches.json?" + Date.now()).then((r) => r.json()).then((d) => {
   ALL = d.rows.map((r) => Object.fromEntries(d.cols.map((c, i) => [c, r[i]])));
   const fs = ALL.filter((m) => m.src === "fs").length, id = ALL.length - fs;
-  $("#meta").textContent = `Son güncelleme: ${new Date(d.updated * 1000).toLocaleString("tr-TR")} · Flashscore: ${fs} maç · iddaa: ${id} maç`;
+  $("#meta").textContent = `Son güncelleme: ${new Date(d.updated * 1000).toLocaleString("tr-TR")} · Bet365 / William Hill: ${fs} maç · iddaa: ${id} maç`;
   applyFilters();
 }).catch(() => { $("#meta").textContent = "Veri yüklenemedi (data/matches.json)"; });
 fetch("data/skorlar.json?" + Date.now())
