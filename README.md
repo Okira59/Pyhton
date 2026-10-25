@@ -10,7 +10,7 @@
 | MACD (12/26/9) | MACD > sinyal çizgisi | MACD < sinyal çizgisi |
 | StochRSI (14/14/3/3) | %K > %D ve %K < 80 | %K < %D ve %K > 20 |
 
-**Kâr al (KAPAT) sinyali:** Bir AL/SAT sinyalinden sonra fiyat giriş fiyatından `TP_PIPS` (varsayılan 10) pip kâra ulaşınca
+**Kâr al (KAPAT) sinyali:** Bir AL/SAT sinyalinden sonra fiyat giriş fiyatından `TP_PIPS` (varsayılan 20) pip kâra ulaşınca
 "İŞLEMİ KAPAT" bildirimi gönderilir. Altında 1 pip = `PIP_SIZE` = 1 $ kabul edilir (20 pip = 20 $).
 Değiştirmek için `bot.py` içindeki ayarları ya da `TP_PIPS` / `PIP_SIZE` ortam değişkenlerini kullanın.
 Yeni bir sinyal gelirse açık işlemin yerini alır.
