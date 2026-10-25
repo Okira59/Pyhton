@@ -46,6 +46,7 @@ MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated te
 MAX_OPEN = int(os.getenv("MAX_OPEN", "5"))  # aynı anda en fazla açık işlem
 
 STATE_FILE = os.getenv("STATE_FILE", "futures_state.json")
+REPORT_TZ = os.getenv("REPORT_TZ", "Europe/Istanbul")  # gün sonu raporu bu saat diliminde gece yarısı gönderilir
 MAX_EVENT_AGE = pd.Timedelta(minutes=30)
 MAX_HISTORY = 300
 # ----------------------------------------------------------------------------
@@ -297,6 +298,66 @@ def _status_text(results: dict, state: dict) -> str:
     return "\n".join(lines)
 
 
+def _day(t) -> str:
+    return pd.Timestamp(t).tz_convert(REPORT_TZ).strftime("%Y-%m-%d")
+
+
+def _new_day() -> dict:
+    return {"opened": 0, "long": 0, "short": 0, "limit": 0, "limit_long": 0, "limit_short": 0,
+            "closed": 0, "wins": 0, "losses": 0, "usd": 0.0, "trail": 0}
+
+
+def _count(daily: dict, t, kind: str, info: dict):
+    c = daily.setdefault(_day(t), _new_day())
+    if kind == "SINYAL":
+        c["opened"] += 1
+        c["long" if info["dir"] == 1 else "short"] += 1
+    elif kind == "LIMIT":
+        c["limit"] += 1
+        c["limit_long" if info["dir"] == 1 else "limit_short"] += 1
+    elif kind == "KAPAT":
+        c["closed"] += 1
+        c["wins" if info["pct"] >= 0 else "losses"] += 1
+        c["usd"] = round(c["usd"] + info.get("usd", usd(info["pct"])), 2)
+    elif kind == "TAKIP":
+        c["trail"] += 1
+
+
+def _seed_daily(state: dict) -> dict:
+    """İlk çalıştırmada bugünün açılış/kapanış sayılarını geçmişten doldurur (limit sayıları kayıtlı değil)."""
+    today = _day(pd.Timestamp.now(tz="UTC"))
+    daily = {}
+    for e in state["history"]:
+        t = pd.Timestamp(e["t"], unit="s", tz="UTC")
+        if _day(t) == today:
+            _count(daily, t, e["kind"], e)
+    daily.setdefault(today, _new_day())["partial"] = True
+    return daily
+
+
+def _daily_text(day: str, c: dict, results: dict, state: dict) -> str:
+    pos = state["positions"]
+    lines = [f"📊 GÜN SONU RAPORU – Futures",
+             f"{pd.Timestamp(day):%d.%m.%Y} (Türkiye saati)", "",
+             f"✅ Açılan işlem: {c['opened']}  (🟢 {c['long']} LONG · 🔴 {c['short']} SHORT)",
+             f"⛔ Limit dolu, açılmayan: {c['limit']}  (🟢 {c['limit_long']} · 🔴 {c['limit_short']})",
+             f"📶 Toplam sinyal: {c['opened'] + c['limit']}", "",
+             f"Kapanan işlem: {c['closed']}  (✅ {c['wins']} kârlı · ❌ {c['losses']} zararlı)",
+             f"Günlük kâr/zarar: {c['usd']:+.2f}$",
+             f"🔒 İz süren stop devreye giren: {c['trail']}", "",
+             f"Gün sonunda açık işlem: {len(pos)}/{MAX_OPEN}"]
+    for sym, p in pos.items():
+        data = results.get(sym)
+        if data is None:
+            continue
+        r = roe(p["dir"], p["entry"], float(data["Close"].iloc[-1]))
+        lines.append(f"{_side(p['dir'])} {_coin(sym):<8} {r:+.1f}%  {usd(r, p.get('margin', MARGIN_USD)):+.2f}$"
+                     + ("  🔒" if p.get("trail") else ""))
+    if c.get("partial"):
+        lines += ["", "ℹ️ Rapor bu gün içinde eklendi; limit dolu sayısı eklendiği andan itibaren sayıldı."]
+    return "\n".join(lines)
+
+
 def check_and_notify(send: bool = True):
     state = _load_state()
     top = top_symbols()
@@ -308,6 +369,8 @@ def check_and_notify(send: bool = True):
     print(f"{len(results)}/{len(symbols)} coin tarandı.")
 
     now = pd.Timestamp.now(tz="UTC")
+    if "daily" not in state:
+        state["daily"] = _seed_daily(state)
     for sym, data in results.items():
         dp = places.get(sym, 2)
         last_t = data["close_time"].iloc[-1]
@@ -317,6 +380,7 @@ def check_and_notify(send: bool = True):
             can_open = lambda: len([s for s in state["positions"] if s != sym]) < MAX_OPEN
             for t, kind, text, info in process_events(sym, dp, data, cs, since=pd.Timestamp(since), can_open=can_open):
                 print(f"\n{text}")
+                _count(state["daily"], t, kind, info)
                 if kind in ("SINYAL", "KAPAT"):
                     state["history"].append({"t": dashboard.ts(t), "kind": kind, **info})
                 if send and now - t <= MAX_EVENT_AGE:
@@ -327,6 +391,13 @@ def check_and_notify(send: bool = True):
                 state["positions"].pop(sym, None)
         state["last"][sym] = last_t.isoformat()
     state["history"] = state["history"][-MAX_HISTORY:]
+    today = _day(now)
+    for day in sorted(d for d in state["daily"] if d < today):
+        text = _daily_text(day, state["daily"].pop(day), results, state)
+        print(f"\n{text}")
+        if send:
+            send_telegram(text)
+    state["daily"].setdefault(today, _new_day())
     ref = results.get("BTCUSDT")
     if send and ref is not None and status_due(state, ref["close_time"].iloc[-1]):
         send_telegram(_status_text(results, state))
@@ -395,11 +466,17 @@ if __name__ == "__main__":
     p.add_argument("--test", action="store_true", help="Telegram'a deneme mesajı gönder")
     p.add_argument("--history", metavar="SEMBOL", help="Bir coinin geçmiş testini göster (ör. BTCUSDT)")
     p.add_argument("--days", type=int, default=60)
+    p.add_argument("--rapor", action="store_true", help="Bugünün gün sonu raporunu ekrana yaz (göndermez)")
     args = p.parse_args()
     if args.test:
         send_telegram(f"✅ Futures botu bağlandı. Hacmi en yüksek {TOP_N} coin 7/24 taranıyor.\n"
                       "🟢 = LONG   🔴 = SHORT  (10x, simülasyon)")
-    if args.history:
+    if args.rapor:
+        st = _load_state()
+        st.setdefault("daily", _seed_daily(st))
+        today = _day(pd.Timestamp.now(tz="UTC"))
+        print(_daily_text(today, st["daily"].get(today, _new_day()), {}, st))
+    elif args.history:
         show_history(args.history, args.days)
     else:
         check_and_notify(send=args.notify)
