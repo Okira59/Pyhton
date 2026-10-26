@@ -334,7 +334,7 @@ const VIEWS = {
       <label style="margin-top:14px">Yedekten geri yükle</label><input type="file" accept=".json,application/json" onchange="yedekYukle(this.files[0])">
       <button class="btn sec" onclick="csvAl()">Excel için CSV indir</button></div>
     <div class="card"><h2>Hatırlatma bildirimi</h2><div class="mut">Uygulama açıldığında geciken/bugün yapılacak aşı varsa bildirim gösterir.</div>
-      <button class="btn sec" onclick="Notification.requestPermission().then(p=>toast(p==='granted'?'Bildirim açık':'İzin verilmedi'))">Bildirim izni ver</button></div>
+      <button class="btn sec" onclick="if(!window.Notification)return toast('Bu cihazda bildirim desteklenmiyor');Notification.requestPermission().then(p=>toast(p==='granted'?'Bildirim açık':'İzin verilmedi'))">Bildirim izni ver</button></div>
     <div class="card"><h2>Tüm verileri sil</h2><button class="btn" style="background:var(--r)" onclick="if(confirm('Tüm kayıtlar silinsin mi? Geri alınamaz.')){localStorage.removeItem(KEY);D=load();save('Silindi')}">Sıfırla</button></div>`;
   },
 };
@@ -551,7 +551,7 @@ function sil(list, id, k = "id") { if (!confirm("Bu kayıt silinsin mi?")) retur
 function filtre(q, id) { q = q.toLocaleLowerCase("tr"); document.querySelectorAll(`#${id} tr`).forEach((r, i) => { if (i) r.style.display = r.textContent.toLocaleLowerCase("tr").includes(q) ? "" : "none"; }); }
 
 /* ---------- Yedek ---------- */
-function indir(ad, icerik, tip) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([icerik], { type: tip })); a.download = ad; a.click(); }
+function indir(ad, icerik, tip) { if (window.AndroidApp) return AndroidApp.kaydet(ad, icerik, tip); const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([icerik], { type: tip })); a.download = ad; a.click(); }
 function yedekAl() { D.yedek = Date.now(); localStorage.setItem(KEY, JSON.stringify(D)); indir(`suru-yedek-${bugun()}.json`, JSON.stringify(D, null, 1), "application/json"); render(); }
 function yedekYukle(f) {
   if (!f) return; const r = new FileReader();
