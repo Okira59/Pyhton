@@ -20,7 +20,7 @@ const HEDEF = { suru: "Tüm sürü (tekrarlı)", kuzu: "Kuzular (doğuma göre)"
 
 let D = load(), V = location.hash.slice(1) || "ozet", FIYAT = null, CANLI = null, HUB = null, EDIT = null, YEM = "bugday", SIRA = "kupe";
 const YEMLER = { bugday: { ad: "Buğday", kod: "KE" }, arpa: { ad: "Arpa", kod: "HBAA" }, kaba: { ad: "Kaba Yem", kod: null } };
-const BASLIK = { ozet: "Özet", liste: "Sürü Listesi", kuzu: "Kuzulama", asi: "Aşılar", yem: "Saman/Ot/Yem", maliyet: "Yem Maliyeti", fiyat: "Borsa", hayvan: "Hayvan Ekle/Düzenle", ayar: "Yedek" };
+const BASLIK = { ozet: "Özet", liste: "Hayvanlar", kuzu: "Kuzulama", asi: "Aşılar", yem: "Saman/Ot/Yem", maliyet: "Yem Maliyeti", fiyat: "Borsa", hayvan: "Hayvanlar", ayar: "Yedekleme" };
 
 function load() {
   let d = null;
@@ -125,7 +125,7 @@ const VIEWS = {
     const grp = [["Kuzu (0-6 ay)", 0, 6], ["Toklu (6-12 ay)", 6, 12], ["1-2 yaş", 12, 24], ["2-5 yaş", 24, 60], ["5 yaş üstü", 60, 1e9]];
     const sirala = { kupe: (a, b) => a.kupe.localeCompare(b.kupe, "tr", { numeric: true }), yas: (a, b) => (a.dogum || "9999").localeCompare(b.dogum || "9999"), genc: (a, b) => (b.dogum || "").localeCompare(a.dogum || "") }[SIRA];
     const kz = a => D.kuzulama.filter(k => k.anne === a);
-    return `<div class="card"><h2>Sürüde ${L.length} hayvan</h2><div class="grid">
+    return `<div class="card"><div class="row"><h2>Sürüde ${L.length} hayvan</h2><button class="btn" style="margin:0" onclick="go('hayvan')">+ Hayvan ekle</button></div><div class="grid">
       ${grp.map(([ad, a, b]) => `<div class="stat">${ad}<b>${L.filter(h => ay(h) != null && ay(h) >= a && ay(h) < b).length}</b></div>`).join("")}
       <div class="stat">Yaşı bilinmeyen<b>${L.filter(h => !h.dogum).length}</b></div>
       <div class="stat">Dişi / Erkek<b>${L.filter(h => h.cins === "Dişi").length} / ${L.filter(h => h.cins === "Erkek").length}</b></div></div></div>
@@ -254,7 +254,7 @@ const VIEWS = {
     const e = EDIT && EDIT.tip === "hayvanlar" ? D.hayvanlar.find(x => x.id === EDIT.id) : null;
     const h = e || { tur: "Koyun", cins: "Dişi" };
     const kz = a => D.kuzulama.filter(k => k.anne === a);
-    return `<div class="card"><h2>${e ? "Hayvanı düzenle" : "Hayvan ekle"}</h2>
+    return `<button class="btn sec" onclick="go('liste')">← Hayvan listesine dön</button><div class="card"><h2>${e ? "Hayvanı düzenle" : "Hayvan ekle"}</h2>
       <div class="f2"><div><label>Küpe no</label><input id="h_kupe" value="${esc(h.kupe || "")}"></div><div><label>Ad / işaret</label><input id="h_ad" value="${esc(h.ad || "")}"></div></div>
       <div class="f3"><div><label>Tür</label><select id="h_tur">${["Koyun", "Keçi"].map(x => opt(x, x, x === h.tur)).join("")}</select></div>
       <div><label>Cinsiyet</label><select id="h_cins">${["Dişi", "Erkek"].map(x => opt(x, x, x === h.cins)).join("")}</select></div>
@@ -425,7 +425,7 @@ function csvAl() {
 /* ---------- Genel ---------- */
 function go(v) { V = v; EDIT = null; location.hash = v; menu(false); render(); scrollTo(0, 0); }
 function render() {
-  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === V));
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === (V === "hayvan" ? "liste" : V)));
   document.getElementById("baslik").textContent = BASLIK[V] || "Özet";
   document.getElementById("app").innerHTML = (VIEWS[V] || VIEWS.ozet)();
 }
