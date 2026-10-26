@@ -1,4 +1,4 @@
-const C = "suru-v7", A = ["./", "index.html", "app.js?v=7", "icon.svg", "manifest.webmanifest"];
+const C = "suru-v8", A = ["./", "index.html", "app.js?v=8", "icon.svg", "manifest.webmanifest"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(C).then(c => c.addAll(A))); self.skipWaiting(); });
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", e => {

@@ -19,8 +19,8 @@ nav button.on{background:var(--g);color:#052e16}main{padding:4px 12px 60px;max-w
 label{display:block;font-size:12.5px;color:var(--mut);margin:6px 0 2px}
 input,select,textarea{width:100%;background:var(--in);color:var(--fg);border:1px solid #33503d;border-radius:9px;padding:9px;font:inherit}
 .f2{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}.f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 8px}
-button.btn{background:var(--g);color:#052e16;border:0;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px;margin-top:10px}
-button.sec{background:var(--in);color:var(--fg)}button.del{background:transparent;color:var(--r);border:0;font-size:13px;padding:4px}
+button.btn,label.btn{background:var(--g);color:#052e16;border:0;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px;margin-top:10px}
+button.sec,label.sec{background:var(--in);color:var(--fg)}button.del{background:transparent;color:var(--r);border:0;font-size:13px;padding:4px}
 button.ed{background:transparent;color:var(--b);border:0;font-size:13px;padding:4px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}th,td{padding:6px 4px;border-bottom:1px solid #2c4335;text-align:left}th{color:var(--mut);font-weight:600}
 td.n,th.n{text-align:right}.tag{display:inline-block;border-radius:7px;padding:1px 7px;font-size:12px;font-weight:700}
@@ -33,5 +33,5 @@ svg text{fill:var(--mut);font-size:10px}
 <div id="perde" onclick="this.classList.remove('acik');document.getElementById('nav').classList.remove('acik')"></div>
 <nav id="nav"><div class="mut" style="padding:4px 10px 8px">🐑 Sürü Takip</div><button data-v="ozet" class="on">📊 Özet</button><button data-v="liste">🐑 Hayvanlar</button><button data-v="kuzu">🍼 Kuzulama</button><button data-v="yem">🌾 Saman/Ot/Yem</button><button data-v="maliyet">💰 Yem Maliyeti</button><button data-v="asi">💉 Aşılar</button><button data-v="ilac">💊 İlaç Maliyetleri</button><button data-v="vet">🩺 Veteriner</button><button data-v="fiyat">📈 Borsa</button><button data-v="ayar">💾 Yedekleme</button></nav>
 <main id="app"></main><div class="toast" id="toast"></div>
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body></html>
