@@ -1,0 +1,52 @@
+name: Hayvan Borsa Fiyatlari
+
+# GitHub cron bu repoda güvenilir çalışmadığı için futures botu bittikten sonra da
+# tetiklenir; 2 saatte bir gerçekten çalışır.
+on:
+  schedule:
+    - cron: "15 */2 * * *"
+  workflow_run:
+    workflows: ["Altin Futures Botu"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hayvan
+  cancel-in-progress: false
+
+jobs:
+  guncelle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zaman kontrolü (2 saatte bir)
+        id: gate
+        run: |
+          last=$(python3 -c "import json;print(json.load(open('docs/hayvan/data/fiyat.json'))['guncelleme'])" 2>/dev/null || echo 0)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ $(( $(date +%s) - last )) -ge 6900 ]; then
+            echo "run=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "Son güncelleme yakın zamanda, atlanıyor."
+          fi
+      - if: steps.gate.outputs.run
+        run: pip install requests
+      - name: Edirne Ticaret Borsası fiyatları
+        if: steps.gate.outputs.run
+        run: python -u hayvan/fiyat.py
+      - name: Kaydet
+        if: steps.gate.outputs.run
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/hayvan/data
+          git diff --cached --quiet && exit 0
+          git commit -m "Hayvan borsa fiyatları güncellendi [skip ci]"
+          for i in 1 2 3 4 5; do
+            git pull --rebase -X theirs && git push && exit 0
+            sleep $((i * 5))
+          done
+          exit 1
