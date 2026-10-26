@@ -191,6 +191,7 @@ def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
              f"Isolated · teminat ${MARGIN_USD:g} · pozisyon ${MARGIN_USD * LEVERAGE:g}",
              f"Giriş fiyatı: {row['Close']:.{dp}f}",
              f"Zarar durdur (-%{SL_ROE:g} = -${usd(SL_ROE):.2f}): {sl:.{dp}f}",
+             f"🛑 Girişte Bitget'e stop emri koyun: {sl:.{dp}f}",
              f"İz süren stop: kâr +%{TRAIL_START_ROE:g} (+${usd(TRAIL_START_ROE):.2f}) olunca devreye girer: {act:.{dp}f}",
              f"Sabit hedef yok; stop en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip eder.",
              f"💡 Limit emirle girin ({row['Close']:.{dp}f}); piyasa emrine göre ücret ~%60 daha düşük.", ""]
@@ -248,10 +249,7 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
                                        f"Stop, en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip ediyor.",
                                        {"sym": sym, "dp": dp, "dir": d, "sl": pos["sl"]}))
             if exit_price is not None:
-                events.append((row["close_time"], "KAPAT", _close_text(sym, dp, pos, row, exit_price, reason),
-                               {"sym": sym, "dp": dp, "dir": pos["dir"], "entry": pos["entry"], "exit": exit_price,
-                                "pct": round(roe(pos["dir"], pos["entry"], exit_price), 2), "reason": reason,
-                                "usd": round(usd(roe(pos["dir"], pos["entry"], exit_price), pos.get("margin", MARGIN_USD)), 2)}))
+                events.append(_close_event(sym, dp, pos, row, exit_price, reason))
                 cs["position"] = pos = None
         sig = int(row["new_signal"])
         if sig != 0 and not pos:
@@ -261,6 +259,29 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
                 events.append(open_position(sym, dp, row, sig, cs))
                 pos = cs["position"]
     return events
+
+
+def _close_event(sym: str, dp: int, pos: dict, row, exit_price: float, reason: str):
+    return (row["close_time"], "KAPAT", _close_text(sym, dp, pos, row, exit_price, reason),
+            {"sym": sym, "dp": dp, "dir": pos["dir"], "entry": pos["entry"], "exit": exit_price,
+             "pct": round(roe(pos["dir"], pos["entry"], exit_price), 2), "reason": reason,
+             "usd": round(usd(roe(pos["dir"], pos["entry"], exit_price), pos.get("margin", MARGIN_USD)), 2)})
+
+
+def live_stop_check(sym: str, dp: int, pos: dict, now: pd.Timestamp):
+    """Henüz kapanmamış 5dk mumun en yüksek/en düşük fiyatıyla stop kontrolü (mum kapanışını beklemeden)."""
+    rows = _get("candles", {"symbol": sym, "productType": "USDT-FUTURES", "granularity": "5m", "limit": 2})
+    open_ms = max(int(r_[0]) for r_ in rows)
+    bar = next(r_ for r_ in rows if int(r_[0]) == open_ms)
+    if pd.Timestamp(open_ms, unit="ms", tz="UTC") + TF_5M <= now:  # son mum zaten kapanmış, normal akışta işlenir
+        return None
+    high, low, last = float(bar[2]), float(bar[3]), float(bar[4])
+    d, sl = pos["dir"], pos["sl"]
+    if not ((low <= sl) if d == 1 else (high >= sl)):
+        return None
+    reason = (f"İz süren stop (zirve kâr +%{roe(d, pos['entry'], pos['peak']):.1f})" if pos.get("trail")
+              else f"-%{SL_ROE:g} zarar durdur")
+    return _close_event(sym, dp, pos, {"close_time": now}, sl, f"{reason} · anlık fiyat {last:.{dp}f}")
 
 
 def open_position(sym: str, dp: int, row: pd.Series, sig: int, cs: dict):
@@ -421,6 +442,17 @@ def check_and_notify(send: bool = True):
         if since is not None:
             run(sym, data, pd.Timestamp(since), lambda row, sig, sym=sym: cands.__setitem__(sym, (row, sig)))
         state["last"][sym] = data["close_time"].iloc[-1].isoformat()
+    # 1b) açık işlemlerde stop, kapanmamış mumun anlık fiyatıyla da kontrol edilir
+    for sym, p in list(state["positions"].items()):
+        try:
+            ev = live_stop_check(sym, places.get(sym, 2), p, now)
+        except Exception as e:  # anlık kontrol başarısızsa sonraki mum kapanışında yakalanır
+            print(f"{sym}: anlık stop kontrolü yapılamadı ({e})")
+            continue
+        if ev:
+            emit([ev])
+            state["positions"].pop(sym)
+            cands.pop(sym, None)
     # 2) adaylar puanı en yüksekten başlayarak açılır (toplam ve yön limiti)
     for sym, (row, sig) in sorted(cands.items(), key=lambda kv: (-strength(kv[1][0], kv[1][1]), kv[1][0]["close_time"])):
         dp, pos = places.get(sym, 2), state["positions"]
