@@ -165,5 +165,19 @@
  },
  "history": [],
  "last_status": "2026-10-26T20:00:00+00:00",
- "daily": {}
+ "daily": {
+  "2026-10-26": {
+   "opened": 0,
+   "long": 0,
+   "short": 0,
+   "limit": 0,
+   "limit_long": 0,
+   "limit_short": 0,
+   "closed": 0,
+   "wins": 0,
+   "losses": 0,
+   "usd": 0.0,
+   "trail": 0
+  }
+ }
 }
