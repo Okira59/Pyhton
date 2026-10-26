@@ -137,7 +137,7 @@ const VIEWS = {
       ${[...L].sort(sirala).map((h, i) => { const k = kz(h.kupe); return `<tr onclick="duzenle('hayvanlar','${h.id}');V='hayvan';render()" style="cursor:pointer"><td class="mut">${i + 1}</td><td><b>${esc(h.kupe)}</b>${h.irk ? ` <span class="tag" style="background:var(--in);color:var(--fg);font-weight:600">${esc(h.irk)}</span>` : ""}${h.ad ? ` <span class="mut">${esc(h.ad)}</span>` : ""}</td><td>${h.tur} ${h.cins === "Dişi" ? "♀" : "♂"}</td><td>${trT(h.dogum)}</td><td><b>${yasYaz(h)}</b></td><td class="n">${k.length ? `${k.length} / ${k.reduce((s, z) => s + (+z.sayi || 0), 0)} kuzu` : "-"}</td></tr>`; }).join("") || `<tr><td colspan=6 class="mut">Henüz hayvan yok. Aşağıdan toplu ekleyebilirsiniz.</td></tr>`}</table></div>
       <div class="mut">Satıra dokunarak hayvanı düzenleyebilirsiniz. Satılan/ölen hayvanlar listede görünmez.</div></div>
     <div class="card"><h2>Toplu hayvan ekle</h2><div class="mut">Her satıra bir küpe no yazın. İsterseniz yanına boşlukla doğum tarihini (gg.aa.yyyy) veya doğum yılını ekleyin. Örnek:<br>TR220001 15.03.2023<br>TR220002 2021</div>
-      <label class="btn sec" style="display:inline-block;text-align:center">📷 Listenin fotoğrafını çek / seç<input type="file" accept="image/*" style="display:none" onchange="fotoListe(this)"></label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn" onclick="kameraAc(fotoListeF)">📷 Fotoğraf çek</button><label class="btn sec" style="display:inline-block;text-align:center">🖼️ Galeriden seç<input type="file" accept="image/*" style="display:none" onchange="fotoListe(this)"></label></div>
       <div id="ocr_durum" class="mut"></div>
       <textarea id="tb_liste" rows="6"></textarea>
       <label>Irk (hepsine uygulanır, boş bırakılabilir)</label><input id="tb_irk" list="irklar" placeholder="örn. Merinos">${irkList()}
@@ -173,7 +173,7 @@ const VIEWS = {
     const bg = bugun();
     const bekl = D.katim.map(x => ({ ...x, dogum: ekle(x.tarih, GEBELIK) })).filter(x => !D.kuzulama.find(z => z.anne === x.anne && z.tarih >= ekle(x.tarih, 100))).sort((a, b) => a.dogum.localeCompare(b.dogum));
     return `<div class="card"><h2>${e ? "Kuzulamayı düzenle" : "Yeni kuzulama"}</h2>${kupeList()}
-      <div class="f2"><div><label>Anne küpe no</label><div style="display:flex;gap:4px"><input id="k_anne" list="kupeler" value="${esc(k.anne || "")}" placeholder="örn. TR22..."><label class="btn sec" style="margin:0;padding:8px 10px" title="Küpeden oku">📷<input type="file" accept="image/*" capture="environment" style="display:none" onchange="fotoKupe(this,'k_anne')"></label></div><div id="ocr_durum" class="mut"></div></div>
+      <div class="f2"><div><label>Anne küpe no</label><div style="display:flex;gap:4px"><input id="k_anne" list="kupeler" value="${esc(k.anne || "")}" placeholder="örn. TR22..."><button class="btn sec" style="margin:0;padding:8px 10px" title="Fotoğraf çek" onclick="kameraAc(f=>fotoKupeF(f,'k_anne'))">📷</button><label class="btn sec" style="margin:0;padding:8px 10px" title="Galeriden seç">🖼️<input type="file" accept="image/*" style="display:none" onchange="fotoKupe(this,'k_anne')"></label></div><div id="ocr_durum" class="mut"></div></div>
       <div><label>Kuzulama tarihi</label><input id="k_tarih" type="date" value="${k.tarih}"></div></div>
       <div class="f2"><div><label>Kaç kuzu doğurdu</label><input id="k_sayi" type="number" min="0" inputmode="numeric" value="${k.sayi}"></div>
       <div><label>Ölü doğan</label><input id="k_olu" type="number" min="0" inputmode="numeric" value="${k.olu || ""}"></div></div>
@@ -314,7 +314,7 @@ const VIEWS = {
     const h = e || { tur: "Koyun", cins: "Dişi" };
     const kz = a => D.kuzulama.filter(k => k.anne === a);
     return `<button class="btn sec" onclick="go('liste')">← Hayvan listesine dön</button><div class="card"><h2>${e ? "Hayvanı düzenle" : "Hayvan ekle"}</h2>
-      <div class="f2"><div><label>Küpe no</label><div style="display:flex;gap:4px"><input id="h_kupe" value="${esc(h.kupe || "")}"><label class="btn sec" style="margin:0;padding:8px 10px" title="Küpeden oku">📷<input type="file" accept="image/*" capture="environment" style="display:none" onchange="fotoKupe(this,'h_kupe')"></label></div><div id="ocr_durum" class="mut"></div></div><div><label>Ad / işaret</label><input id="h_ad" value="${esc(h.ad || "")}"></div></div>
+      <div class="f2"><div><label>Küpe no</label><div style="display:flex;gap:4px"><input id="h_kupe" value="${esc(h.kupe || "")}"><button class="btn sec" style="margin:0;padding:8px 10px" title="Fotoğraf çek" onclick="kameraAc(f=>fotoKupeF(f,'h_kupe'))">📷</button><label class="btn sec" style="margin:0;padding:8px 10px" title="Galeriden seç">🖼️<input type="file" accept="image/*" style="display:none" onchange="fotoKupe(this,'h_kupe')"></label></div><div id="ocr_durum" class="mut"></div></div><div><label>Ad / işaret</label><input id="h_ad" value="${esc(h.ad || "")}"></div></div>
       <label>Irk</label><input id="h_irk" list="irklar" value="${esc(h.irk || "")}" placeholder="Listeden seçin veya yazın (örn. Merinos)">${irkList()}
       <div class="f3"><div><label>Tür</label><select id="h_tur">${["Koyun", "Keçi"].map(x => opt(x, x, x === h.tur)).join("")}</select></div>
       <div><label>Cinsiyet</label><select id="h_cins">${["Dişi", "Erkek"].map(x => opt(x, x, x === h.cins)).join("")}</select></div>
@@ -422,8 +422,25 @@ function kupeBul(t) {
   }
   return out;
 }
-async function fotoListe(inp) {
-  const f = inp.files[0]; inp.value = ""; if (!f) return;
+function fotoListe(inp) { const f = inp.files[0]; inp.value = ""; if (f) fotoListeF(f); }
+function fotoKupe(inp, id) { const f = inp.files[0]; inp.value = ""; if (f) fotoKupeF(f, id); }
+async function kameraAc(cb) {
+  const yedek = () => { const i = document.createElement("input"); i.type = "file"; i.accept = "image/*"; i.capture = "environment"; i.onchange = () => i.files[0] && cb(i.files[0]); i.click(); };
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return yedek();
+  let st;
+  try { st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); }
+  catch (e) { if (e && e.name === "NotAllowedError") ocrDurum("Kamera izni verilmedi. Tarayıcı ayarlarından bu siteye kamera izni verin ya da 'Galeriden seç'i kullanın."); return yedek(); }
+  const o = document.createElement("div");
+  o.style.cssText = "position:fixed;inset:0;background:#000;z-index:20;display:flex;flex-direction:column";
+  o.innerHTML = `<video autoplay playsinline muted style="flex:1;width:100%;object-fit:contain;background:#000"></video>
+    <div style="display:flex;gap:10px;padding:14px;justify-content:center;background:#111"><button class="btn sec" style="margin:0;flex:1">Kapat</button><button class="btn" style="margin:0;flex:2;font-size:17px">📸 Çek</button></div>`;
+  document.body.appendChild(o);
+  const v = o.querySelector("video"), [kapat, cek] = o.querySelectorAll("button"), bitir = () => { st.getTracks().forEach(t => t.stop()); o.remove(); };
+  v.srcObject = st;
+  kapat.onclick = bitir;
+  cek.onclick = () => { const c = document.createElement("canvas"); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext("2d").drawImage(v, 0, 0); bitir(); c.toBlob(b => b && cb(b), "image/jpeg", 0.92); };
+}
+async function fotoListeF(f) {
   try {
     const L = kupeBul(await ocrOku(f));
     if (!L.length) return ocrDurum("Fotoğrafta küpe numarası bulunamadı. Listeyi düz, net ve yakından çekip tekrar deneyin.");
@@ -435,8 +452,7 @@ async function fotoListe(inp) {
     ta.focus();
   } catch (e) { ocrDurum("Hata: " + e.message); }
 }
-async function fotoKupe(inp, id) {
-  const f = inp.files[0]; inp.value = ""; if (!f) return;
+async function fotoKupeF(f, id) {
   try {
     const t = await ocrOku(f); let L = kupeBul(t.replace(/\n/g, " "));
     if (!L.length) { const m = t.replace(/[^\d\n ]/g, "").replace(/\s+/g, "").match(/\d{8,14}/); if (m) L = [{ kupe: "TR" + m[0] }]; }
