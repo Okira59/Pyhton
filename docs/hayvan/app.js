@@ -18,7 +18,7 @@ const VARSAYILAN_ASI = [
 ];
 const HEDEF = { suru: "Tüm sürü (tekrarlı)", kuzu: "Kuzular (doğuma göre)", gebe: "Gebeler (doğum öncesi)" };
 
-let D = load(), V = location.hash.slice(1) || "ozet", FIYAT = null, CANLI = null, HUB = null, EDIT = null, YEM = "bugday", SIRA = "kupe";
+let D = load(), V = location.hash.slice(1) || "ozet", FIYAT = null, CANLI = null, HUB = null, EDIT = null, YEM = "bugday", SIRA = "kupe", BF = "saman";
 const YEMLER = { bugday: { ad: "Buğday", kod: "KE" }, arpa: { ad: "Arpa", kod: "HBAA" }, kaba: { ad: "Kaba Yem", kod: null } };
 const BASLIK = { ozet: "Özet", liste: "Hayvanlar", kuzu: "Kuzulama", asi: "Aşılar", yem: "Saman/Ot/Yem", maliyet: "Yem Maliyeti", fiyat: "Borsa", hayvan: "Hayvanlar", ayar: "Yedekleme" };
 
@@ -26,7 +26,7 @@ function load() {
   let d = null;
   try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   d = d || {};
-  for (const k of ["hayvanlar", "kuzulama", "katim", "asilar", "tuketim", "yemFiyat"]) d[k] = d[k] || [];
+  for (const k of ["hayvanlar", "kuzulama", "katim", "asilar", "tuketim", "yemFiyat", "birimFiyat"]) d[k] = d[k] || [];
   if (!d.asiTur) d.asiTur = VARSAYILAN_ASI.map((a, i) => ({ id: "v" + i, ad: a[0], hedef: a[1], ilkGun: a[2], rapelGun: a[3], aralikGun: a[4], not: a[5] }));
   return d;
 }
@@ -220,7 +220,17 @@ const VIEWS = {
     const g7 = ekle(bg, -6), ay = bg.slice(0, 8) + "01", g30 = ekle(bg, -29);
     const gun = (from) => Math.max(1, D.tuketim.filter(x => x.tarih >= from && x.tarih <= bg).length);
     const satir = (ad, k, b) => `<tr><td>${ad}</td><td class="n">${fmt(top(g7, k), 1)}</td><td class="n">${fmt(top(g7, k) / gun(g7), 1)}</td><td class="n">${fmt(top(ay, k), 1)}</td><td class="n">${fmt(top(g30, k) / gun(g30), 1)}</td><td class="mut">${b}</td></tr>`;
-    return `<div class="card"><h2>Günlük tüketim girişi</h2>
+    const BB = { saman: "balya", ot: "balya", yem: "çuval" }, AD = { saman: "Saman", ot: "Ot", yem: "Yem" };
+    const mal = (from) => D.tuketim.filter(x => x.tarih >= from && x.tarih <= bg).reduce((s, x) => s + gunMaliyet(x), 0);
+    const bfL = D.birimFiyat.filter(x => x.tur === BF).sort((a, b) => b.tarih.localeCompare(a.tarih));
+    const bugunM = gunMaliyet(t);
+    return `<div class="card"><h2>Birim maliyet fiyatları</h2>
+      <div class="secim">${["saman", "ot", "yem"].map(k => { const f = birimF(k, bg); return `<button class="${BF === k ? "on" : ""}" onclick="BF='${k}';render()">${AD[k]}<br><small>${f ? fmt(f, 2) + " ₺/" + BB[k] : "fiyat girin"}</small></button>`; }).join("")}</div>
+      <div class="f3"><div><label>Tarih</label><input id="bf_tarih" type="date" value="${bg}"></div>
+      <div style="grid-column:span 2"><label>${AD[BF]} fiyatı (₺ / 1 ${BB[BF]})</label><input id="bf_fiyat" type="number" step="0.01" inputmode="decimal" placeholder="örn. ${BF === "yem" ? "750" : "250"}"></div></div>
+      <button class="btn" onclick="birimKaydet()">${AD[BF]} fiyatını kaydet</button>
+      ${bfL.length ? `<h3>${AD[BF]} fiyat geçmişi</h3><div class="scroll"><table><tr><th>Tarih</th><th class="n">₺ / ${BB[BF]}</th><th></th></tr>${bfL.map(x => `<tr><td>${trT(x.tarih)}</td><td class="n">${fmt(x.fiyat, 2)} ₺</td><td class="n"><button class="del" onclick="sil('birimFiyat','${x.id}')">Sil</button></td></tr>`).join("")}</table></div>` : ""}</div>
+    <div class="card"><h2>Günlük tüketim girişi</h2>
       <label>Tarih</label><input id="y_tarih" type="date" value="${t.tarih}" onchange="EDIT={tip:'tuketim',id:this.value};render()">
       <div class="f3"><div><label>Saman (balya)</label><input id="y_saman" type="number" step="0.5" inputmode="decimal" value="${t.saman ?? ""}"></div>
       <div><label>Ot (balya)</label><input id="y_ot" type="number" step="0.5" inputmode="decimal" value="${t.ot ?? ""}"></div>
@@ -230,9 +240,11 @@ const VIEWS = {
       <button class="btn sec" onclick="dunKopyala()">Dünkü değerleri getir</button></div>
     <div class="card"><h2>Özet</h2><div class="scroll"><table><tr><th></th><th class="n">Son 7 gün</th><th class="n">Günlük ort. (7g)</th><th class="n">Bu ay</th><th class="n">Günlük ort. (30g)</th><th></th></tr>
       ${satir("Saman", "saman", "balya")}${satir("Ot", "ot", "balya")}${satir("Yem", "yem", "çuval")}</table></div>
+      <div class="grid" style="margin-top:10px"><div class="stat">Bu günün maliyeti<b>${fmt(bugunM, 2)} ₺</b><span class="mut">${trT(t.tarih)}</span></div><div class="stat">Son 7 gün<b>${fmt(mal(g7), 2)} ₺</b><span class="mut">ort. ${fmt(mal(g7) / gun(g7), 2)} ₺/gün</span></div><div class="stat">Bu ay<b>${fmt(mal(ay), 2)} ₺</b><span class="mut">ort. ${fmt(mal(ay) / gun(ay), 2)} ₺/gün</span></div><div class="stat">Son 30 gün<b>${fmt(mal(g30), 2)} ₺</b><span class="mut">ort. ${fmt(mal(g30) / gun(g30), 2)} ₺/gün</span></div></div>
+      ${["saman", "ot", "yem"].some(k => !birimF(k, bg)) ? `<div class="mut">Fiyatı girilmeyen kalemler maliyete katılmaz.</div>` : ""}
       ${grafikYem(L.slice(0, 30).reverse())}</div>
-    <div class="card"><h2>Kayıtlar</h2><div class="scroll"><table><tr><th>Tarih</th><th class="n">Saman</th><th class="n">Ot</th><th class="n">Yem</th><th></th></tr>
-      ${L.map(x => `<tr><td>${trT(x.tarih)}${x.not ? `<div class="mut">${esc(x.not)}</div>` : ""}</td><td class="n">${fmt(x.saman || 0, 1)}</td><td class="n">${fmt(x.ot || 0, 1)}</td><td class="n">${fmt(x.yem || 0, 1)}</td><td class="n"><button class="ed" onclick="EDIT={tip:'tuketim',id:'${x.tarih}'};render();scrollTo(0,0)">Düzenle</button><button class="del" onclick="sil('tuketim','${x.tarih}','tarih')">Sil</button></td></tr>`).join("") || `<tr><td colspan=5 class="mut">Kayıt yok</td></tr>`}</table></div></div>`;
+    <div class="card"><h2>Kayıtlar</h2><div class="scroll"><table><tr><th>Tarih</th><th class="n">Saman</th><th class="n">Ot</th><th class="n">Yem</th><th class="n">Maliyet</th><th></th></tr>
+      ${L.map(x => `<tr><td>${trT(x.tarih)}${x.not ? `<div class="mut">${esc(x.not)}</div>` : ""}</td><td class="n">${fmt(x.saman || 0, 1)}</td><td class="n">${fmt(x.ot || 0, 1)}</td><td class="n">${fmt(x.yem || 0, 1)}</td><td class="n">${fmt(gunMaliyet(x), 0)} ₺</td><td class="n"><button class="ed" onclick="EDIT={tip:'tuketim',id:'${x.tarih}'};render();scrollTo(0,0)">Düzenle</button><button class="del" onclick="sil('tuketim','${x.tarih}','tarih')">Sil</button></td></tr>`).join("") || `<tr><td colspan=6 class="mut">Kayıt yok</td></tr>`}</table></div></div>`;
   },
 
   fiyat() {
@@ -381,6 +393,19 @@ function turKaydet() {
   const hedef = val("t_hedef");
   upsert("asiTur", { id: EDIT && EDIT.tip === "asiTur" ? EDIT.id : uid(), ad, hedef, aralikGun: num(val("t_aralik")) || (hedef === "suru" ? 365 : 0), ilkGun: num(val("t_ilk")), rapelGun: num(val("t_rapel")), not: val("t_not") });
   save();
+}
+function birimF(k, t) {
+  const L = D.birimFiyat.filter(x => x.tur === k).sort((a, b) => a.tarih.localeCompare(b.tarih));
+  if (!L.length) return 0;
+  const o = L.filter(x => x.tarih <= t).pop() || L[0];
+  return o.fiyat;
+}
+function gunMaliyet(x) { return ["saman", "ot", "yem"].reduce((s, k) => s + (+x[k] || 0) * birimF(k, x.tarih), 0); }
+function birimKaydet() {
+  const f = num(val("bf_fiyat")), tarih = val("bf_tarih") || bugun();
+  if (!(f > 0)) return toast("Fiyat girin");
+  D.birimFiyat = D.birimFiyat.filter(x => !(x.tur === BF && x.tarih === tarih));
+  D.birimFiyat.push({ id: uid(), tur: BF, tarih, fiyat: f }); save("Fiyat kaydedildi");
 }
 function yemKaydet() {
   const tarih = val("y_tarih"); if (!tarih) return toast("Tarih gerekli");
