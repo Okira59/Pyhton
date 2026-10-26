@@ -4,7 +4,7 @@ Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinle
 5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI, MACD ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
-kâr %30'a ya da zarar %20'ye ulaşınca işlem kapatılır. Her işlem isolated $20
+zarar %10'a ulaşınca işlem kapatılır; kâr %20'yi geçince iz süren stop devreye girer. Her işlem isolated $20
 teminatla açılır; aynı anda en fazla 5 işlem açık olur (doluyken sinyal bildirilir, işlem açılmaz). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
 """
@@ -39,7 +39,7 @@ MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "4"))  # üst zaman dilimin
 MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman diliminden en az bu kadarı onaylamalı
 
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
-SL_ROE = float(os.getenv("SL_ROE", "20"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %2)
+SL_ROE = float(os.getenv("SL_ROE", "10"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %1)
 TRAIL_START_ROE = float(os.getenv("TRAIL_START_ROE", "20"))  # kâr bu ROE'ye ulaşınca iz süren stop başlar
 TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden izler
 MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
@@ -218,6 +218,8 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
             if "act" not in pos:  # eski (sabit hedefli) pozisyonlar iz süren stopa geçer
                 pos["act"] = levels(pos["dir"], pos["entry"])[0]
                 pos.pop("tp", None)
+            if not pos.get("trail"):  # iz süren stop devrede değilse ilk stop güncel SL_ROE'ye göre
+                pos["sl"] = float(levels(pos["dir"], pos["entry"])[1])
             d, sl = pos["dir"], pos["sl"]
             # temkinli: mum içinde önce mevcut stop kontrol edilir, zirve sonra güncellenir
             exit_price = reason = None
