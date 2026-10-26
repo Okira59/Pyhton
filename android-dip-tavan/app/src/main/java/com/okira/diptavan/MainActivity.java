@@ -50,7 +50,11 @@ public class MainActivity extends Activity {
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
         }
-        SignalJob.schedule(this);
+        try {
+            SignalJob.schedule(this);
+        } catch (RuntimeException e) {
+            // bildirim zamanlanamasa da panel açık kalsın
+        }
     }
 
     @Override
