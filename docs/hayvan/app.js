@@ -436,7 +436,6 @@ function bildirim() {
   localStorage.setItem("suru_bildirim", bugun());
   new Notification("Sürü Takip – aşı zamanı", { body: acil.map(p => p.tur.ad).join(", "), icon: "icon.svg" });
 }
-document.getElementById("menuBtn").onclick = () => menu(true);
 document.getElementById("nav").onclick = e => { if (e.target.dataset.v) go(e.target.dataset.v); };
 addEventListener("hashchange", () => { const v = location.hash.slice(1); if (v && v !== V) { V = v; EDIT = null; render(); } });
 render(); fiyatYukle(); bildirim();
