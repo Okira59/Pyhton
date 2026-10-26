@@ -134,6 +134,8 @@ const VIEWS = {
       ${[...L].sort(sirala).map((h, i) => { const k = kz(h.kupe); return `<tr onclick="duzenle('hayvanlar','${h.id}');V='hayvan';render()" style="cursor:pointer"><td class="mut">${i + 1}</td><td><b>${esc(h.kupe)}</b>${h.ad ? ` <span class="mut">${esc(h.ad)}</span>` : ""}</td><td>${h.tur} ${h.cins === "Dişi" ? "♀" : "♂"}</td><td>${trT(h.dogum)}</td><td><b>${yasYaz(h)}</b></td><td class="n">${k.length ? `${k.length} / ${k.reduce((s, z) => s + (+z.sayi || 0), 0)} kuzu` : "-"}</td></tr>`; }).join("") || `<tr><td colspan=6 class="mut">Henüz hayvan yok. Aşağıdan toplu ekleyebilirsiniz.</td></tr>`}</table></div>
       <div class="mut">Satıra dokunarak hayvanı düzenleyebilirsiniz. Satılan/ölen hayvanlar listede görünmez.</div></div>
     <div class="card"><h2>Toplu hayvan ekle</h2><div class="mut">Her satıra bir küpe no yazın. İsterseniz yanına boşlukla doğum tarihini (gg.aa.yyyy) veya doğum yılını ekleyin. Örnek:<br>TR220001 15.03.2023<br>TR220002 2021</div>
+      <label class="btn sec" style="display:inline-block;text-align:center">📷 Listenin fotoğrafını çek / seç<input type="file" accept="image/*" style="display:none" onchange="fotoListe(this)"></label>
+      <div id="ocr_durum" class="mut"></div>
       <textarea id="tb_liste" rows="6"></textarea>
       <div class="f2"><div><label>Tür</label><select id="tb_tur">${opt("Koyun", "Koyun")}${opt("Keçi", "Keçi")}</select></div><div><label>Cinsiyet</label><select id="tb_cins">${opt("Dişi", "Dişi")}${opt("Erkek", "Erkek")}</select></div></div>
       <button class="btn" onclick="topluEkle()">Ekle</button></div>`;
@@ -167,7 +169,7 @@ const VIEWS = {
     const bg = bugun();
     const bekl = D.katim.map(x => ({ ...x, dogum: ekle(x.tarih, GEBELIK) })).filter(x => !D.kuzulama.find(z => z.anne === x.anne && z.tarih >= ekle(x.tarih, 100))).sort((a, b) => a.dogum.localeCompare(b.dogum));
     return `<div class="card"><h2>${e ? "Kuzulamayı düzenle" : "Yeni kuzulama"}</h2>${kupeList()}
-      <div class="f2"><div><label>Anne küpe no</label><input id="k_anne" list="kupeler" value="${esc(k.anne || "")}" placeholder="örn. TR22..."></div>
+      <div class="f2"><div><label>Anne küpe no</label><div style="display:flex;gap:4px"><input id="k_anne" list="kupeler" value="${esc(k.anne || "")}" placeholder="örn. TR22..."><label class="btn sec" style="margin:0;padding:8px 10px" title="Küpeden oku">📷<input type="file" accept="image/*" capture="environment" style="display:none" onchange="fotoKupe(this,'k_anne')"></label></div><div id="ocr_durum" class="mut"></div></div>
       <div><label>Kuzulama tarihi</label><input id="k_tarih" type="date" value="${k.tarih}"></div></div>
       <div class="f2"><div><label>Kaç kuzu doğurdu</label><input id="k_sayi" type="number" min="0" inputmode="numeric" value="${k.sayi}"></div>
       <div><label>Ölü doğan</label><input id="k_olu" type="number" min="0" inputmode="numeric" value="${k.olu || ""}"></div></div>
@@ -308,7 +310,7 @@ const VIEWS = {
     const h = e || { tur: "Koyun", cins: "Dişi" };
     const kz = a => D.kuzulama.filter(k => k.anne === a);
     return `<button class="btn sec" onclick="go('liste')">← Hayvan listesine dön</button><div class="card"><h2>${e ? "Hayvanı düzenle" : "Hayvan ekle"}</h2>
-      <div class="f2"><div><label>Küpe no</label><input id="h_kupe" value="${esc(h.kupe || "")}"></div><div><label>Ad / işaret</label><input id="h_ad" value="${esc(h.ad || "")}"></div></div>
+      <div class="f2"><div><label>Küpe no</label><div style="display:flex;gap:4px"><input id="h_kupe" value="${esc(h.kupe || "")}"><label class="btn sec" style="margin:0;padding:8px 10px" title="Küpeden oku">📷<input type="file" accept="image/*" capture="environment" style="display:none" onchange="fotoKupe(this,'h_kupe')"></label></div><div id="ocr_durum" class="mut"></div></div><div><label>Ad / işaret</label><input id="h_ad" value="${esc(h.ad || "")}"></div></div>
       <div class="f3"><div><label>Tür</label><select id="h_tur">${["Koyun", "Keçi"].map(x => opt(x, x, x === h.tur)).join("")}</select></div>
       <div><label>Cinsiyet</label><select id="h_cins">${["Dişi", "Erkek"].map(x => opt(x, x, x === h.cins)).join("")}</select></div>
       <div><label>Doğum tarihi</label><input id="h_dogum" type="date" value="${h.dogum || ""}"></div></div>
@@ -381,6 +383,62 @@ function mHesap() {
 function yemFiyatKaydet() {
   const f = num(val("m_fiyat")), tarih = val("m_tarih"); if (!f || !tarih) return toast("Fiyat ve tarih gerekli");
   D.yemFiyat.push({ id: uid(), yem: YEM, tarih, kg: f / +val("m_birim"), not: val("m_not") }); save();
+}
+let OCR = null;
+function ocrYukle() {
+  if (window.Tesseract) return Promise.resolve();
+  return new Promise((ok, no) => { const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"; sc.onload = ok; sc.onerror = () => no(new Error("Okuma aracı yüklenemedi (internet gerekli)")); document.head.appendChild(sc); });
+}
+function ocrDurum(m) { const d = document.getElementById("ocr_durum"); if (d) d.textContent = m; }
+function resimHazirla(f) {
+  return new Promise((ok, no) => { const im = new Image(); im.onload = () => {
+    const k = Math.min(3, Math.max(1, 2000 / Math.max(im.width, im.height))), c = document.createElement("canvas");
+    c.width = im.width * k; c.height = im.height * k; const x = c.getContext("2d"); x.drawImage(im, 0, 0, c.width, c.height);
+    const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
+    for (let i = 0; i < p.length; i += 4) { const g = 0.3 * p[i] + 0.59 * p[i + 1] + 0.11 * p[i + 2]; p[i] = p[i + 1] = p[i + 2] = g; }
+    x.putImageData(d, 0, 0); URL.revokeObjectURL(im.src); ok(c); }; im.onerror = () => no(new Error("Fotoğraf açılamadı")); im.src = URL.createObjectURL(f); });
+}
+async function ocrOku(f) {
+  ocrDurum("Okuma aracı hazırlanıyor…"); await ocrYukle();
+  if (!OCR) { OCR = await Tesseract.createWorker("eng"); await OCR.setParameters({ tessedit_char_whitelist: "TRtr0123456789./- \n" }); }
+  ocrDurum("Fotoğraf okunuyor…");
+  const r = await OCR.recognize(await resimHazirla(f));
+  return r.data.text || "";
+}
+function kupeBul(t) {
+  const n = s => s.toUpperCase().replace(/[OQ]/g, "0").replace(/[IL|]/g, "1");
+  const out = [];
+  for (const satir of t.split("\n")) {
+    const u0 = n(satir), d = u0.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{4})/), u = d ? u0.replace(d[0], " | ") : u0;
+    const m = u.match(/T\s*R[\s-]*((?:\d\s?){6,12}\d)/);
+    if (!m) continue;
+    const kupe = "TR" + m[1].replace(/\D/g, ""), y = !d && u.slice(m.index + m[0].length).match(/\b(19|20)\d{2}\b/);
+    if (!out.find(x => x.kupe === kupe)) out.push({ kupe, tarih: d ? `${d[1].padStart(2, "0")}.${d[2].padStart(2, "0")}.${d[3]}` : y ? y[0] : "" });
+  }
+  return out;
+}
+async function fotoListe(inp) {
+  const f = inp.files[0]; inp.value = ""; if (!f) return;
+  try {
+    const L = kupeBul(await ocrOku(f));
+    if (!L.length) return ocrDurum("Fotoğrafta küpe numarası bulunamadı. Listeyi düz, net ve yakından çekip tekrar deneyin.");
+    const ta = document.getElementById("tb_liste"), var_ = new Set(ta.value.split("\n").map(x => x.trim().split(/\s+/)[0]));
+    const yeni = L.filter(x => !var_.has(x.kupe));
+    ta.value = (ta.value.trim() ? ta.value.trim() + "\n" : "") + yeni.map(x => (x.kupe + " " + x.tarih).trim()).join("\n");
+    const kayitli = L.filter(x => D.hayvanlar.find(h => h.kupe === x.kupe)).length;
+    ocrDurum(`${L.length} küpe no okundu${kayitli ? ` (${kayitli} tanesi zaten kayıtlı)` : ""}. Aşağıdaki listeyi kontrol edip yanlışları düzeltin, sonra "Ekle"ye basın.`);
+    ta.focus();
+  } catch (e) { ocrDurum("Hata: " + e.message); }
+}
+async function fotoKupe(inp, id) {
+  const f = inp.files[0]; inp.value = ""; if (!f) return;
+  try {
+    const t = await ocrOku(f); let L = kupeBul(t.replace(/\n/g, " "));
+    if (!L.length) { const m = t.replace(/[^\d\n ]/g, "").replace(/\s+/g, "").match(/\d{8,14}/); if (m) L = [{ kupe: "TR" + m[0] }]; }
+    if (!L.length) return ocrDurum("Küpe numarası okunamadı. Küpeyi yakından, ışıklı ve düz çekip tekrar deneyin ya da elle yazın.");
+    document.getElementById(id).value = L[0].kupe;
+    ocrDurum(`Okunan: ${L[0].kupe} – lütfen kontrol edin.`);
+  } catch (e) { ocrDurum("Hata: " + e.message); }
 }
 function topluEkle() {
   const tur = val("tb_tur"), cins = val("tb_cins"); let n = 0, atla = 0;
