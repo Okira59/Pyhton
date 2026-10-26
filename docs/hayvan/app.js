@@ -43,6 +43,8 @@ const num = v => { const n = parseFloat(String(v).replace(",", ".")); return isN
 const fmt = (n, d = 0) => (+n).toLocaleString("tr-TR", { maximumFractionDigits: d, minimumFractionDigits: d });
 const val = id => document.getElementById(id).value.trim();
 const opt = (v, t, s) => `<option value="${esc(v)}"${s ? " selected" : ""}>${esc(t)}</option>`;
+const IRKLAR = ["Merinos", "Karacabey Merinosu", "İle de France", "Tahirova", "Kıvırcık", "Sakız", "Akkaraman", "Morkaraman", "İvesi", "Karayaka", "Dağlıç", "Hemşin", "Dorper", "Romanov", "Assaf", "Lacaune", "Melez", "Saanen", "Kıl Keçisi", "Malta Keçisi", "Ankara Keçisi", "Boer", "Halep Keçisi"];
+const irkList = () => `<datalist id="irklar">${[...new Set([...D.hayvanlar.map(h => h.irk).filter(Boolean), ...IRKLAR])].map(x => opt(x, "")).join("")}</datalist>`;
 const kupeList = () => `<datalist id="kupeler">${D.hayvanlar.filter(h => h.aktif !== false).map(h => opt(h.kupe, h.ad || "")).join("")}</datalist>`;
 const asiAd = id => (D.asiTur.find(t => t.id === id) || { ad: "?" }).ad;
 
@@ -128,15 +130,17 @@ const VIEWS = {
     return `<div class="card"><div class="row"><h2>Sürüde ${L.length} hayvan</h2><button class="btn" style="margin:0" onclick="go('hayvan')">+ Hayvan ekle</button></div><div class="grid">
       ${grp.map(([ad, a, b]) => `<div class="stat">${ad}<b>${L.filter(h => ay(h) != null && ay(h) >= a && ay(h) < b).length}</b></div>`).join("")}
       <div class="stat">Yaşı bilinmeyen<b>${L.filter(h => !h.dogum).length}</b></div>
-      <div class="stat">Dişi / Erkek<b>${L.filter(h => h.cins === "Dişi").length} / ${L.filter(h => h.cins === "Erkek").length}</b></div></div></div>
+      <div class="stat">Dişi / Erkek<b>${L.filter(h => h.cins === "Dişi").length} / ${L.filter(h => h.cins === "Erkek").length}</b></div></div>
+      ${(() => { const g = {}; L.forEach(h => g[h.irk || "Irkı girilmemiş"] = (g[h.irk || "Irkı girilmemiş"] || 0) + 1); const e = Object.entries(g).sort((a, b) => b[1] - a[1]); return L.length ? `<h3>Irklara göre</h3><div class="scroll"><table>${e.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n"><b>${v}</b></td><td class="n mut">${fmt(v / L.length * 100, 0)}%</td></tr>`).join("")}</table></div>` : ""; })()}</div>
     <div class="card"><div class="row"><h2>Küpe numaraları ve yaşlar</h2><select style="width:auto" onchange="SIRA=this.value;render()">${opt("kupe", "Küpe no'ya göre", SIRA === "kupe")}${opt("yas", "En yaşlı önce", SIRA === "yas")}${opt("genc", "En genç önce", SIRA === "genc")}</select></div>
       <input placeholder="Ara (küpe no / ad)" oninput="filtre(this.value,'lt')"><div class="scroll"><table id="lt"><tr><th>#</th><th>Küpe no</th><th>Tür</th><th>Doğum</th><th>Yaş</th><th class="n">Kuzulama</th></tr>
-      ${[...L].sort(sirala).map((h, i) => { const k = kz(h.kupe); return `<tr onclick="duzenle('hayvanlar','${h.id}');V='hayvan';render()" style="cursor:pointer"><td class="mut">${i + 1}</td><td><b>${esc(h.kupe)}</b>${h.ad ? ` <span class="mut">${esc(h.ad)}</span>` : ""}</td><td>${h.tur} ${h.cins === "Dişi" ? "♀" : "♂"}</td><td>${trT(h.dogum)}</td><td><b>${yasYaz(h)}</b></td><td class="n">${k.length ? `${k.length} / ${k.reduce((s, z) => s + (+z.sayi || 0), 0)} kuzu` : "-"}</td></tr>`; }).join("") || `<tr><td colspan=6 class="mut">Henüz hayvan yok. Aşağıdan toplu ekleyebilirsiniz.</td></tr>`}</table></div>
+      ${[...L].sort(sirala).map((h, i) => { const k = kz(h.kupe); return `<tr onclick="duzenle('hayvanlar','${h.id}');V='hayvan';render()" style="cursor:pointer"><td class="mut">${i + 1}</td><td><b>${esc(h.kupe)}</b>${h.irk ? ` <span class="tag" style="background:var(--in);color:var(--fg);font-weight:600">${esc(h.irk)}</span>` : ""}${h.ad ? ` <span class="mut">${esc(h.ad)}</span>` : ""}</td><td>${h.tur} ${h.cins === "Dişi" ? "♀" : "♂"}</td><td>${trT(h.dogum)}</td><td><b>${yasYaz(h)}</b></td><td class="n">${k.length ? `${k.length} / ${k.reduce((s, z) => s + (+z.sayi || 0), 0)} kuzu` : "-"}</td></tr>`; }).join("") || `<tr><td colspan=6 class="mut">Henüz hayvan yok. Aşağıdan toplu ekleyebilirsiniz.</td></tr>`}</table></div>
       <div class="mut">Satıra dokunarak hayvanı düzenleyebilirsiniz. Satılan/ölen hayvanlar listede görünmez.</div></div>
     <div class="card"><h2>Toplu hayvan ekle</h2><div class="mut">Her satıra bir küpe no yazın. İsterseniz yanına boşlukla doğum tarihini (gg.aa.yyyy) veya doğum yılını ekleyin. Örnek:<br>TR220001 15.03.2023<br>TR220002 2021</div>
       <label class="btn sec" style="display:inline-block;text-align:center">📷 Listenin fotoğrafını çek / seç<input type="file" accept="image/*" style="display:none" onchange="fotoListe(this)"></label>
       <div id="ocr_durum" class="mut"></div>
       <textarea id="tb_liste" rows="6"></textarea>
+      <label>Irk (hepsine uygulanır, boş bırakılabilir)</label><input id="tb_irk" list="irklar" placeholder="örn. Merinos">${irkList()}
       <div class="f2"><div><label>Tür</label><select id="tb_tur">${opt("Koyun", "Koyun")}${opt("Keçi", "Keçi")}</select></div><div><label>Cinsiyet</label><select id="tb_cins">${opt("Dişi", "Dişi")}${opt("Erkek", "Erkek")}</select></div></div>
       <button class="btn" onclick="topluEkle()">Ekle</button></div>`;
   },
@@ -311,10 +315,11 @@ const VIEWS = {
     const kz = a => D.kuzulama.filter(k => k.anne === a);
     return `<button class="btn sec" onclick="go('liste')">← Hayvan listesine dön</button><div class="card"><h2>${e ? "Hayvanı düzenle" : "Hayvan ekle"}</h2>
       <div class="f2"><div><label>Küpe no</label><div style="display:flex;gap:4px"><input id="h_kupe" value="${esc(h.kupe || "")}"><label class="btn sec" style="margin:0;padding:8px 10px" title="Küpeden oku">📷<input type="file" accept="image/*" capture="environment" style="display:none" onchange="fotoKupe(this,'h_kupe')"></label></div><div id="ocr_durum" class="mut"></div></div><div><label>Ad / işaret</label><input id="h_ad" value="${esc(h.ad || "")}"></div></div>
+      <label>Irk</label><input id="h_irk" list="irklar" value="${esc(h.irk || "")}" placeholder="Listeden seçin veya yazın (örn. Merinos)">${irkList()}
       <div class="f3"><div><label>Tür</label><select id="h_tur">${["Koyun", "Keçi"].map(x => opt(x, x, x === h.tur)).join("")}</select></div>
       <div><label>Cinsiyet</label><select id="h_cins">${["Dişi", "Erkek"].map(x => opt(x, x, x === h.cins)).join("")}</select></div>
       <div><label>Doğum tarihi</label><input id="h_dogum" type="date" value="${h.dogum || ""}"></div></div>
-      <label>Not (ırk, satış/ölüm...)</label><input id="h_not" value="${esc(h.not || "")}">
+      <label>Not (satış/ölüm...)</label><input id="h_not" value="${esc(h.not || "")}">
       <label><input type="checkbox" id="h_aktif" style="width:auto" ${h.aktif === false ? "" : "checked"}> Sürüde (satıldı/öldüyse işareti kaldırın)</label>
       <button class="btn" onclick="hayvanKaydet()">Kaydet</button>${e ? ` <button class="btn sec" onclick="EDIT=null;render()">Vazgeç</button>` : ""}
       <div class="mut" style="margin-top:6px">Hayvan kaydı zorunlu değildir; kuzulama ve aşıyı doğrudan küpe no yazarak da girebilirsiniz.</div></div>
@@ -441,7 +446,7 @@ async function fotoKupe(inp, id) {
   } catch (e) { ocrDurum("Hata: " + e.message); }
 }
 function topluEkle() {
-  const tur = val("tb_tur"), cins = val("tb_cins"); let n = 0, atla = 0;
+  const tur = val("tb_tur"), cins = val("tb_cins"), irk = val("tb_irk"); let n = 0, atla = 0;
   for (const satir of val("tb_liste").split("\n")) {
     const p = satir.trim().split(/\s+/); if (!p[0]) continue;
     if (D.hayvanlar.find(h => h.kupe === p[0])) { atla++; continue; }
@@ -450,7 +455,7 @@ function topluEkle() {
     if (m) dogum = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
     else if (/^\d{4}$/.test(t)) dogum = t + "-01-01";
     else if (/^\d{4}-\d{2}-\d{2}$/.test(t)) dogum = t;
-    D.hayvanlar.push({ id: uid(), kupe: p[0], ad: "", tur, cins, dogum, not: "", aktif: true }); n++;
+    D.hayvanlar.push({ id: uid(), kupe: p[0], ad: "", tur, irk, cins, dogum, not: "", aktif: true }); n++;
   }
   if (!n) return toast(atla ? "Hepsi zaten kayıtlı" : "Küpe no girin");
   save(`${n} hayvan eklendi${atla ? `, ${atla} zaten vardı` : ""}`);
@@ -522,7 +527,7 @@ function hayvanKaydet() {
   const kupe = val("h_kupe"); if (!kupe) return toast("Küpe no gerekli");
   const id = EDIT && EDIT.tip === "hayvanlar" ? EDIT.id : uid();
   if (D.hayvanlar.find(x => x.kupe === kupe && x.id !== id)) return toast("Bu küpe no zaten kayıtlı");
-  upsert("hayvanlar", { id, kupe, ad: val("h_ad"), tur: val("h_tur"), cins: val("h_cins"), dogum: val("h_dogum"), not: val("h_not"), aktif: document.getElementById("h_aktif").checked });
+  upsert("hayvanlar", { id, kupe, ad: val("h_ad"), tur: val("h_tur"), irk: val("h_irk"), cins: val("h_cins"), dogum: val("h_dogum"), not: val("h_not"), aktif: document.getElementById("h_aktif").checked });
   save();
 }
 function duzenle(tip, id) { EDIT = { tip, id }; render(); scrollTo(0, 0); }
@@ -558,7 +563,7 @@ function csvAl() {
   L.push("TÜKETİM", "Tarih;Saman (balya);Ot (balya);Yem (çuval);Not", ...D.tuketim.map(x => [x.tarih, x.saman, x.ot, x.yem, x.not].map(c).join(";")), "");
   L.push("İLAÇLAR", "Tarih;İlaç;Ne işe yarar;Uygulama;Kime;Adet;Maliyet;Not", ...D.ilaclar.map(x => [x.tarih, x.ad, x.amac, x.sekil, x.hedef, x.adet, x.tutar, x.not].map(c).join(";")), "");
   L.push("VETERİNER", "Tarih;Veteriner;İşlem;Kime;Açıklama;Ücret;Not", ...D.veteriner.map(x => [x.tarih, x.vet, x.islem, x.hedef, x.aciklama, x.tutar, x.not].map(c).join(";")), "");
-  L.push("HAYVANLAR", "Küpe;Ad;Tür;Cinsiyet;Doğum;Sürüde;Not", ...D.hayvanlar.map(x => [x.kupe, x.ad, x.tur, x.cins, x.dogum, x.aktif === false ? "Hayır" : "Evet", x.not].map(c).join(";")));
+  L.push("HAYVANLAR", "Küpe;Ad;Tür;Irk;Cinsiyet;Doğum;Sürüde;Not", ...D.hayvanlar.map(x => [x.kupe, x.ad, x.tur, x.irk, x.cins, x.dogum, x.aktif === false ? "Hayır" : "Evet", x.not].map(c).join(";")));
   indir(`suru-${bugun()}.csv`, "\ufeff" + L.join("\n"), "text/csv");
 }
 
