@@ -20,13 +20,13 @@ const HEDEF = { suru: "Tüm sürü (tekrarlı)", kuzu: "Kuzular (doğuma göre)"
 
 let D = load(), V = location.hash.slice(1) || "ozet", FIYAT = null, CANLI = null, HUB = null, EDIT = null, YEM = "bugday", SIRA = "kupe", BF = "saman";
 const YEMLER = { bugday: { ad: "Buğday", kod: "KE" }, arpa: { ad: "Arpa", kod: "HBAA" }, kaba: { ad: "Kaba Yem", kod: null } };
-const BASLIK = { ozet: "Özet", liste: "Hayvanlar", kuzu: "Kuzulama", asi: "Aşılar", yem: "Saman/Ot/Yem", maliyet: "Yem Maliyeti", fiyat: "Borsa", hayvan: "Hayvanlar", ayar: "Yedekleme" };
+const BASLIK = { ozet: "Özet", liste: "Hayvanlar", kuzu: "Kuzulama", asi: "Aşılar", yem: "Saman/Ot/Yem", maliyet: "Yem Maliyeti", ilac: "İlaç Maliyetleri", vet: "Veteriner", fiyat: "Borsa", hayvan: "Hayvanlar", ayar: "Yedekleme" };
 
 function load() {
   let d = null;
   try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   d = d || {};
-  for (const k of ["hayvanlar", "kuzulama", "katim", "asilar", "tuketim", "yemFiyat", "birimFiyat"]) d[k] = d[k] || [];
+  for (const k of ["hayvanlar", "kuzulama", "katim", "asilar", "tuketim", "yemFiyat", "birimFiyat", "ilaclar", "veteriner"]) d[k] = d[k] || [];
   if (!d.asiTur) d.asiTur = VARSAYILAN_ASI.map((a, i) => ({ id: "v" + i, ad: a[0], hedef: a[1], ilkGun: a[2], rapelGun: a[3], aralikGun: a[4], not: a[5] }));
   return d;
 }
@@ -247,6 +247,47 @@ const VIEWS = {
       ${L.map(x => `<tr><td>${trT(x.tarih)}${x.not ? `<div class="mut">${esc(x.not)}</div>` : ""}</td><td class="n">${fmt(x.saman || 0, 1)}</td><td class="n">${fmt(x.ot || 0, 1)}</td><td class="n">${fmt(x.yem || 0, 1)}</td><td class="n">${fmt(gunMaliyet(x), 0)} ₺</td><td class="n"><button class="ed" onclick="EDIT={tip:'tuketim',id:'${x.tarih}'};render();scrollTo(0,0)">Düzenle</button><button class="del" onclick="sil('tuketim','${x.tarih}','tarih')">Sil</button></td></tr>`).join("") || `<tr><td colspan=6 class="mut">Kayıt yok</td></tr>`}</table></div></div>`;
   },
 
+  ilac() {
+    const e = EDIT && EDIT.tip === "ilaclar" ? D.ilaclar.find(x => x.id === EDIT.id) : null;
+    const a = e || { tarih: bugun(), hedef: "Tüm sürü", sekil: "Deri altı enjeksiyon" };
+    const L = [...D.ilaclar].sort((x, y) => y.tarih.localeCompare(x.tarih));
+    const ad = [...new Set(D.ilaclar.map(x => x.ad))];
+    const ozet = {}; L.filter(x => x.tarih.slice(0, 4) === bugun().slice(0, 4)).forEach(x => ozet[x.ad] = (ozet[x.ad] || 0) + (+x.tutar || 0));
+    return `<div class="card"><h2>${e ? "İlaç kaydını düzenle" : "İlaç kaydı ekle"}</h2>
+      <div class="f2"><div><label>Tarih</label><input id="i_tarih" type="date" value="${a.tarih}"></div>
+      <div><label>İlaç ismi</label><input id="i_ad" list="ilacAd" value="${esc(a.ad || "")}" placeholder="örn. İvermektin"><datalist id="ilacAd">${ad.map(x => opt(x, "")).join("")}</datalist></div></div>
+      <label>Ne işe yarar</label><input id="i_amac" value="${esc(a.amac || "")}" placeholder="örn. İç-dış parazit">
+      <div class="f2"><div><label>Uygulama şekli</label><select id="i_sekil">${["Deri altı enjeksiyon", "Kas içi enjeksiyon", "Damar içi", "Ağızdan (içirme)", "Sırttan dökme", "Banyo / sprey", "Göz / yara üstü", "Yeme / suya katma", "Diğer"].map(x => opt(x, x, a.sekil === x)).join("")}</select></div>
+      <div><label>Kime (küpe no veya Tüm sürü)</label><input id="i_hedef" list="kupeler" value="${esc(a.hedef || "")}"></div></div>
+      <div class="f2"><div><label>Hayvan sayısı</label><input id="i_adet" type="number" inputmode="numeric" value="${a.adet ?? ""}"></div>
+      <div><label>Maliyet (₺, toplam)</label><input id="i_tutar" type="number" step="0.01" inputmode="decimal" value="${a.tutar ?? ""}"></div></div>
+      <label>Not (doz vb.)</label><input id="i_not" value="${esc(a.not || "")}">${kupeList()}
+      <button class="btn" onclick="ilacKaydet()">${e ? "Güncelle" : "Kaydet"}</button>${e ? `<button class="btn sec" onclick="EDIT=null;render()">Vazgeç</button>` : ""}</div>
+    ${toplamKart(D.ilaclar, "İlaç maliyeti", ozet)}
+    <div class="card"><h2>İlaç kayıtları</h2><input placeholder="Ara" oninput="filtre(this.value,'it')"><div class="scroll"><table id="it"><tr><th>Tarih / İlaç</th><th>Ne işe yarar · Uygulama</th><th class="n">Maliyet</th><th></th></tr>
+      ${L.map(x => `<tr><td>${trT(x.tarih)}<div><b>${esc(x.ad)}</b></div></td><td>${esc(x.amac || "")}<div class="mut">${esc(x.sekil || "")} · ${esc(x.hedef || "")}${x.adet ? " · " + x.adet + " baş" : ""}${x.not ? " · " + esc(x.not) : ""}</div></td><td class="n">${fmt(+x.tutar || 0, 2)} ₺${x.adet && x.tutar ? `<div class="mut">${fmt(x.tutar / x.adet, 2)} ₺/baş</div>` : ""}</td><td class="n"><button class="ed" onclick="duzenle('ilaclar','${x.id}')">Düzenle</button><button class="del" onclick="sil('ilaclar','${x.id}')">Sil</button></td></tr>`).join("") || `<tr><td colspan=4 class="mut">Kayıt yok</td></tr>`}</table></div></div>`;
+  },
+
+  vet() {
+    const e = EDIT && EDIT.tip === "veteriner" ? D.veteriner.find(x => x.id === EDIT.id) : null;
+    const son = [...D.veteriner].sort((x, y) => y.tarih.localeCompare(x.tarih));
+    const a = e || { tarih: bugun(), vet: son[0] ? son[0].vet : "", hedef: "Tüm sürü" };
+    const vetler = [...new Set(D.veteriner.map(x => x.vet).filter(Boolean))];
+    const ozet = {}; son.filter(x => x.tarih.slice(0, 4) === bugun().slice(0, 4)).forEach(x => ozet[x.vet || "-"] = (ozet[x.vet || "-"] || 0) + (+x.tutar || 0));
+    return `<div class="card"><h2>${e ? "Veteriner kaydını düzenle" : "Veteriner kaydı ekle"}</h2>
+      <div class="f2"><div><label>Tarih</label><input id="v_tarih" type="date" value="${a.tarih}"></div>
+      <div><label>Veteriner</label><input id="v_vet" list="vetAd" value="${esc(a.vet || "")}" placeholder="Veteriner adı"><datalist id="vetAd">${vetler.map(x => opt(x, "")).join("")}</datalist></div></div>
+      <div class="f2"><div><label>Yapılan işlem</label><select id="v_islem">${["Muayene", "Tedavi", "Aşı uygulaması", "Doğum yardımı", "Ameliyat", "Kan / test", "Kontrol ziyareti", "Danışma", "Diğer"].map(x => opt(x, x, a.islem === x)).join("")}</select></div>
+      <div><label>Kime (küpe no veya Tüm sürü)</label><input id="v_hedef" list="kupeler" value="${esc(a.hedef || "")}"></div></div>
+      <label>Açıklama (teşhis, yapılanlar)</label><input id="v_aciklama" value="${esc(a.aciklama || "")}">
+      <div class="f2"><div><label>Ücret (₺)</label><input id="v_tutar" type="number" step="0.01" inputmode="decimal" value="${a.tutar ?? ""}"></div>
+      <div><label>Telefon / not</label><input id="v_not" value="${esc(a.not || "")}"></div></div>${kupeList()}
+      <button class="btn" onclick="vetKaydet()">${e ? "Güncelle" : "Kaydet"}</button>${e ? `<button class="btn sec" onclick="EDIT=null;render()">Vazgeç</button>` : ""}</div>
+    ${toplamKart(D.veteriner, "Veteriner maliyeti", ozet)}
+    <div class="card"><h2>Veteriner kayıtları</h2><input placeholder="Ara" oninput="filtre(this.value,'vt')"><div class="scroll"><table id="vt"><tr><th>Tarih / Veteriner</th><th>İşlem</th><th class="n">Ücret</th><th></th></tr>
+      ${son.map(x => `<tr><td>${trT(x.tarih)}<div><b>${esc(x.vet || "-")}</b></div></td><td>${esc(x.islem || "")}<div class="mut">${esc(x.hedef || "")}${x.aciklama ? " · " + esc(x.aciklama) : ""}${x.not ? " · " + esc(x.not) : ""}</div></td><td class="n">${fmt(+x.tutar || 0, 2)} ₺</td><td class="n"><button class="ed" onclick="duzenle('veteriner','${x.id}')">Düzenle</button><button class="del" onclick="sil('veteriner','${x.id}')">Sil</button></td></tr>`).join("") || `<tr><td colspan=4 class="mut">Kayıt yok</td></tr>`}</table></div></div>`;
+  },
+
   fiyat() {
     const g = (FIYAT && FIYAT.gecmis) || [];
     const kuzu = g.filter(x => x.kod === "1102002"), sut = g.filter(x => x.kod === "1102004");
@@ -438,11 +479,27 @@ function yedekYukle(f) {
   r.onload = () => { try { const d = JSON.parse(r.result); if (!d.kuzulama || !d.tuketim) throw 0; if (!confirm("Mevcut veriler yedekteki ile değiştirilsin mi?")) return; localStorage.setItem(KEY, JSON.stringify(d)); D = load(); save("Yedek yüklendi"); } catch (e) { toast("Geçersiz yedek dosyası"); } };
   r.readAsText(f);
 }
+function toplamKart(list, baslik, grup) {
+  const bg = bugun(), t = f => list.filter(f).reduce((s, x) => s + (+x.tutar || 0), 0);
+  const ay = t(x => x.tarih.slice(0, 7) === bg.slice(0, 7)), yil = t(x => x.tarih.slice(0, 4) === bg.slice(0, 4)), g30 = t(x => x.tarih >= ekle(bg, -29) && x.tarih <= bg), hep = t(() => true);
+  const G = Object.entries(grup).sort((a, b) => b[1] - a[1]);
+  return `<div class="card"><h2>${baslik}</h2><div class="grid"><div class="stat">Bu ay<b>${fmt(ay, 2)} ₺</b></div><div class="stat">Son 30 gün<b>${fmt(g30, 2)} ₺</b></div><div class="stat">Bu yıl<b>${fmt(yil, 2)} ₺</b></div><div class="stat">Toplam<b>${fmt(hep, 2)} ₺</b><span class="mut">${list.length} kayıt</span></div></div>
+    ${G.length ? `<h3>Bu yıl dağılım</h3><div class="scroll"><table>${G.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${fmt(v, 2)} ₺</td></tr>`).join("")}</table></div>` : ""}</div>`;
+}
+function ilacKaydet() {
+  const ad = val("i_ad"); if (!ad) return toast("İlaç ismi gerekli");
+  upsert("ilaclar", { id: EDIT && EDIT.tip === "ilaclar" ? EDIT.id : uid(), tarih: val("i_tarih") || bugun(), ad, amac: val("i_amac"), sekil: val("i_sekil"), hedef: val("i_hedef"), adet: num(val("i_adet")) || "", tutar: num(val("i_tutar")), not: val("i_not") }); save();
+}
+function vetKaydet() {
+  upsert("veteriner", { id: EDIT && EDIT.tip === "veteriner" ? EDIT.id : uid(), tarih: val("v_tarih") || bugun(), vet: val("v_vet"), islem: val("v_islem"), hedef: val("v_hedef"), aciklama: val("v_aciklama"), tutar: num(val("v_tutar")), not: val("v_not") }); save();
+}
 function csvAl() {
   const c = s => `"${String(s ?? "").replace(/"/g, '""')}"`, L = [];
   L.push("KUZULAMA", "Tarih;Anne;Kuzu;Erkek;Dişi;Ölü;Not", ...D.kuzulama.map(x => [x.tarih, x.anne, x.sayi, x.erkek, x.disi, x.olu, x.not].map(c).join(";")), "");
   L.push("AŞILAR", "Tarih;Aşı;Kime;Adet;Not", ...D.asilar.map(x => [x.tarih, asiAd(x.tur), x.hedef, x.adet, x.not].map(c).join(";")), "");
   L.push("TÜKETİM", "Tarih;Saman (balya);Ot (balya);Yem (çuval);Not", ...D.tuketim.map(x => [x.tarih, x.saman, x.ot, x.yem, x.not].map(c).join(";")), "");
+  L.push("İLAÇLAR", "Tarih;İlaç;Ne işe yarar;Uygulama;Kime;Adet;Maliyet;Not", ...D.ilaclar.map(x => [x.tarih, x.ad, x.amac, x.sekil, x.hedef, x.adet, x.tutar, x.not].map(c).join(";")), "");
+  L.push("VETERİNER", "Tarih;Veteriner;İşlem;Kime;Açıklama;Ücret;Not", ...D.veteriner.map(x => [x.tarih, x.vet, x.islem, x.hedef, x.aciklama, x.tutar, x.not].map(c).join(";")), "");
   L.push("HAYVANLAR", "Küpe;Ad;Tür;Cinsiyet;Doğum;Sürüde;Not", ...D.hayvanlar.map(x => [x.kupe, x.ad, x.tur, x.cins, x.dogum, x.aktif === false ? "Hayır" : "Evet", x.not].map(c).join(";")));
   indir(`suru-${bugun()}.csv`, "\ufeff" + L.join("\n"), "text/csv");
 }
