@@ -18,6 +18,8 @@ jobs:
               tok = os.getenv(name)
               if not tok:
                   continue
+              me = json.load(urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getMe"))["result"]
+              print("bot", name, "kullanıcı adı: @" + me.get("username", "?"))
               data = json.load(urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getUpdates"))
               seen = {}
               for u in data.get("result", []):
