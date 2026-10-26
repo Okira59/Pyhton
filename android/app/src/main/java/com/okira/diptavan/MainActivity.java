@@ -13,10 +13,10 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 public class MainActivity extends Activity {
-    static final String PANEL = "https://okira59.github.io/Pyhton/dip-tavan.html";
-    // uygulama yalnızca Dip-Tavan panelini gösterir: diğer sayfaların menüsü gizlenir
+    static final String PANEL = BuildConfig.PANEL;
+    // uygulama yalnızca kendi botunun panelini gösterir: diğer sayfalara giden bağlantılar gizlenir
     static final String HIDE_NAV = "(function(){var s=document.createElement('style');"
-            + "s.textContent='header nav{display:none!important}';document.head.appendChild(s);})()";
+            + "s.textContent='" + BuildConfig.HIDE + "{display:none!important}';document.head.appendChild(s);})()";
 
     private WebView web;
 
@@ -46,6 +46,7 @@ public class MainActivity extends Activity {
         if (state == null) web.loadUrl(PANEL);
         else web.restoreState(state);
 
+        if (BuildConfig.DATA.isEmpty()) return;
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);

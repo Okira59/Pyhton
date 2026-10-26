@@ -1,0 +1,82 @@
+plugins { id "com.android.application" }
+
+def RAW = "https://raw.githubusercontent.com/Okira59/Pyhton/main/docs/data/"
+def WEB = "https://okira59.github.io/Pyhton/"
+
+android {
+    namespace "com.okira.diptavan"
+    compileSdk 34
+    defaultConfig {
+        minSdk 24
+        targetSdk 34
+    }
+    buildFeatures { buildConfig true }
+    // her bot ayrı bir uygulama: yalnızca kendi paneli + (varsa) kendi sinyal bildirimleri.
+    // KIND: bildirim biçimi; DATA boşsa bildirim yok; HIDE: panelde gizlenecek diğer-sayfa bağlantıları (CSS seçici)
+    flavorDimensions "bot"
+    productFlavors {
+        diptavan {
+            dimension "bot"
+            applicationId "com.okira.diptavan"
+            versionCode 3
+            versionName "1.2"
+            resValue "string", "app_name", "Dip-Tavan"
+            buildConfigField "String", "KIND", '"dip"'
+            buildConfigField "String", "PANEL", "\"${WEB}dip-tavan.html\""
+            buildConfigField "String", "DATA", "\"${RAW}dip_tavan.json\""
+            buildConfigField "String", "HIDE", '"header nav"'
+        }
+        altin {
+            dimension "bot"
+            applicationId "com.okira.altinsinyal"
+            versionCode 1
+            versionName "1.0"
+            resValue "string", "app_name", "Altın Sinyal"
+            buildConfigField "String", "KIND", '"altin"'
+            buildConfigField "String", "PANEL", "\"${WEB}index.html\""
+            buildConfigField "String", "DATA", "\"${RAW}sinyal.json\""
+            buildConfigField "String", "HIDE", '"header nav"'
+        }
+        futures {
+            dimension "bot"
+            applicationId "com.okira.futures"
+            versionCode 1
+            versionName "1.0"
+            resValue "string", "app_name", "Futures"
+            buildConfigField "String", "KIND", '"futures"'
+            buildConfigField "String", "PANEL", "\"${WEB}futures.html\""
+            buildConfigField "String", "DATA", "\"${RAW}futures.json\""
+            buildConfigField "String", "HIDE", '"header nav"'
+        }
+        gol {
+            dimension "bot"
+            applicationId "com.okira.golanaliz"
+            versionCode 1
+            versionName "1.0"
+            resValue "string", "app_name", "Gol Analiz"
+            buildConfigField "String", "KIND", '"gol"'
+            buildConfigField "String", "PANEL", "\"${WEB}gol/\""
+            buildConfigField "String", "DATA", '""'
+            buildConfigField "String", "HIDE", '"header h1 a"'
+        }
+    }
+    signingConfigs {
+        release {
+            // anahtar depoda tutulmaz: APK_KEYSTORE / APK_KEY_PASS ortam değişkenleriyle verilir
+            storeFile file(System.getenv("APK_KEYSTORE") ?: "release.jks")
+            storePassword System.getenv("APK_KEY_PASS")
+            keyAlias "diptavan"
+            keyPassword System.getenv("APK_KEY_PASS")
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

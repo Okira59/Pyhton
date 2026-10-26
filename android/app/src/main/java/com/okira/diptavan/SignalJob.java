@@ -22,9 +22,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Locale;
 
-/** Yaklaşık 15 dakikada bir panel verisini kontrol eder, yeni sinyal/kapanış varsa bildirim gösterir. */
+/** Yaklaşık 15 dakikada bir botun panel verisini kontrol eder, yeni sinyal/kapanış varsa bildirim gösterir. */
 public class SignalJob extends JobService {
-    static final String DATA = "https://raw.githubusercontent.com/Okira59/Pyhton/main/docs/data/dip_tavan.json";
+    static final String DATA = BuildConfig.DATA;
     static final String CHANNEL = "sinyaller";
     static final int JOB_ID = 1;
 
@@ -64,26 +64,32 @@ public class SignalJob extends JobService {
             JSONObject e = hist.getJSONObject(i);
             long t = e.getLong("t");
             if (t > max) max = t;
-            if (last >= 0 && t > last) notify(c, (int) t, e);
+            if (last >= 0 && t > last) notify(c, (int) t + i, e);
         }
         prefs.edit().putLong("last_t", max).apply();  // ilk çalışmada eski kayıtlar için bildirim gelmez
     }
 
     static void notify(Context c, int id, JSONObject e) throws Exception {
         boolean buy = e.getInt("dir") == 1;
+        boolean fut = "futures".equals(BuildConfig.KIND);
+        String sym = fut ? e.getString("sym").replace("USDT", "") : "XAU/USD";
+        String side = fut ? (buy ? "LONG" : "SHORT") : (buy ? "AL" : "SAT");
+        int dp = e.optInt("dp", 2);
         String title, text;
         if ("SINYAL".equals(e.getString("kind"))) {
-            title = (buy ? "🟢 AL (dip)" : "🔴 SAT (tavan)") + " – XAU/USD";
-            text = String.format(Locale.US, "Giriş: %.2f", e.getDouble("price"));
+            String what = "dip".equals(BuildConfig.KIND) ? (buy ? " (dip)" : " (tavan)") : "";
+            title = (buy ? "🟢 " : "🔴 ") + side + what + " – " + sym;
+            text = "Giriş: " + fmt(e.getDouble("price"), dp);
         } else {
             double entry = e.getDouble("entry"), exit = e.getDouble("exit");
-            double pnl = (buy ? 1 : -1) * (exit - entry);  // altında 1 pip = 1 $
-            title = (pnl >= 0 ? "✅" : "❌") + " İŞLEM KAPANDI – XAU/USD " + (buy ? "AL" : "SAT");
-            text = String.format(Locale.US, "%.2f → %.2f  (%+.2f$)  %s",
-                    entry, exit, pnl, e.optString("reason"));
+            // futures: $20 teminatlı işlemin $ sonucu; altın: 1 pip = 1 $
+            double pnl = fut ? e.optDouble("usd", e.getDouble("pct") * 0.2) : (buy ? 1 : -1) * (exit - entry);
+            title = (pnl >= 0 ? "✅" : "❌") + " İŞLEM KAPANDI – " + sym + " " + side;
+            text = fmt(entry, dp) + " → " + fmt(exit, dp) + String.format(Locale.US, "  (%+.2f$)  ", pnl)
+                    + e.optString("reason");
         }
         NotificationManager nm = c.getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Dip-Tavan sinyalleri", NotificationManager.IMPORTANCE_HIGH));
+        nm.createNotificationChannel(new NotificationChannel(CHANNEL, c.getString(R.string.app_name) + " sinyalleri", NotificationManager.IMPORTANCE_HIGH));
         PendingIntent open = PendingIntent.getActivity(c, 0, new Intent(c, MainActivity.class),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         nm.notify(id, new Notification.Builder(c, CHANNEL)
@@ -94,6 +100,10 @@ public class SignalJob extends JobService {
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .build());
+    }
+
+    static String fmt(double v, int dp) {
+        return String.format(Locale.US, "%." + dp + "f", v);
     }
 
     static String get(String url) throws Exception {
