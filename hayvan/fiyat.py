@@ -2,16 +2,19 @@
 import json, os, time
 import requests
 
-URL = "https://online.etb.org.tr/api/v1/Alpha.WebPanel/OnlineKullaniciBulten/GetOnlineBultenSonIslemlerCH"
+URL0 = "https://online.etb.org.tr/api/v1/Alpha.WebPanel/OnlineKullaniciBulten/GetOnlineBultenSonIslemler"
+URLS = [URL0 + "CH", URL0]
 OUT = os.path.join(os.path.dirname(__file__), "..", "docs", "hayvan", "data", "fiyat.json")
 KODLAR = {"1102002": "Kuzu", "1102004": "Süt Kuzusu", "1102001": "Koyun", "1102006": "Toklu",
-          "1102003": "Keçi", "1102005": "Oğlak", "1102007": "Marya"}
+          "1102003": "Keçi", "1102005": "Oğlak", "1102007": "Marya", "KE": "Buğday", "HBAA": "Arpa"}
 
 
 def main():
-    r = requests.get(URL, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-    r.raise_for_status()
-    rows = [x for x in r.json() if x.get("UrunKodu") in KODLAR]
+    rows = []
+    for u in URLS:
+        r = requests.get(u, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        rows += [x for x in r.json() if x.get("UrunKodu") in KODLAR]
     try:
         d = json.load(open(OUT, encoding="utf-8"))
     except Exception:
@@ -21,7 +24,7 @@ def main():
     for x in rows:
         rec = {"kod": x["UrunKodu"], "urun": KODLAR[x["UrunKodu"]], "tarih": x["Tarih"],
                "min": x["MinFiyat"], "max": x["MaxFiyat"], "ort": round(x["OrtFiyat"], 2),
-               "hayvan": x["Adet"], "islem": x["IslemAdet"], "kg": x["IslemMiktari"]}
+               "hayvan": x.get("Adet"), "islem": x.get("IslemAdet"), "kg": x.get("IslemMiktari")}
         son[rec["kod"]] = rec
         key = (rec["kod"], rec["tarih"])
         if key in seen:
@@ -35,7 +38,7 @@ def main():
         f.write('{"guncelleme":%d,\n"son":%s,\n"gecmis":[\n%s\n]}\n' % (
             d["guncelleme"], json.dumps(son, ensure_ascii=False),
             ",\n".join(json.dumps(h, ensure_ascii=False) for h in d["gecmis"])))
-    for k in ("1102002", "1102004"):
+    for k in ("1102002", "1102004", "KE", "HBAA"):
         s = son.get(k)
         print(KODLAR[k], s and f"{s['tarih']} ort {s['ort']} TL/kg ({s['min']}-{s['max']})")
 

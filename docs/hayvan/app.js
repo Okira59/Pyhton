@@ -1,5 +1,5 @@
 "use strict";
-const KEY = "suru_takip_v1", API = "https://online.etb.org.tr/api/v1/Alpha.WebPanel/OnlineKullaniciBulten/GetOnlineBultenSonIslemlerCH";
+const KEY = "suru_takip_v1", API0 = "https://online.etb.org.tr/api/v1/Alpha.WebPanel/OnlineKullaniciBulten/GetOnlineBultenSonIslemler", API = API0 + "CH";
 const GEBELIK = 150;
 const VARSAYILAN_ASI = [
   ["Enterotoksemi (Clostridium karma)", "suru", 0, 0, 180, "Yetişkinlere yılda 2 kez."],
@@ -18,13 +18,15 @@ const VARSAYILAN_ASI = [
 ];
 const HEDEF = { suru: "Tüm sürü (tekrarlı)", kuzu: "Kuzular (doğuma göre)", gebe: "Gebeler (doğum öncesi)" };
 
-let D = load(), V = location.hash.slice(1) || "ozet", FIYAT = null, CANLI = null, EDIT = null;
+let D = load(), V = location.hash.slice(1) || "ozet", FIYAT = null, CANLI = null, HUB = null, EDIT = null, YEM = "bugday", SIRA = "kupe";
+const YEMLER = { bugday: { ad: "Buğday", kod: "KE" }, arpa: { ad: "Arpa", kod: "HBAA" }, kaba: { ad: "Kaba Yem", kod: null } };
+const BASLIK = { ozet: "Özet", liste: "Sürü Listesi", kuzu: "Kuzulama", asi: "Aşılar", yem: "Saman/Ot/Yem", maliyet: "Yem Maliyeti", fiyat: "Borsa", hayvan: "Hayvan Ekle/Düzenle", ayar: "Yedek" };
 
 function load() {
   let d = null;
   try { d = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
   d = d || {};
-  for (const k of ["hayvanlar", "kuzulama", "katim", "asilar", "tuketim"]) d[k] = d[k] || [];
+  for (const k of ["hayvanlar", "kuzulama", "katim", "asilar", "tuketim", "yemFiyat"]) d[k] = d[k] || [];
   if (!d.asiTur) d.asiTur = VARSAYILAN_ASI.map((a, i) => ({ id: "v" + i, ad: a[0], hedef: a[1], ilkGun: a[2], rapelGun: a[3], aralikGun: a[4], not: a[5] }));
   return d;
 }
@@ -116,6 +118,47 @@ const VIEWS = {
       <div class="stat">Gebe (koç katımı)<b>${gebe.length}</b></div></div></div>`;
   },
 
+  liste() {
+    const bg = bugun(), L = D.hayvanlar.filter(h => h.aktif !== false);
+    const ay = h => h.dogum ? Math.floor(fark(bg, h.dogum) / 30.44) : null;
+    const yasYaz = h => { const a = ay(h); if (a == null) return "-"; const y = Math.floor(a / 12), m = a % 12; return (y ? y + " yaş " : "") + (m || !y ? m + " ay" : ""); };
+    const grp = [["Kuzu (0-6 ay)", 0, 6], ["Toklu (6-12 ay)", 6, 12], ["1-2 yaş", 12, 24], ["2-5 yaş", 24, 60], ["5 yaş üstü", 60, 1e9]];
+    const sirala = { kupe: (a, b) => a.kupe.localeCompare(b.kupe, "tr", { numeric: true }), yas: (a, b) => (a.dogum || "9999").localeCompare(b.dogum || "9999"), genc: (a, b) => (b.dogum || "").localeCompare(a.dogum || "") }[SIRA];
+    const kz = a => D.kuzulama.filter(k => k.anne === a);
+    return `<div class="card"><h2>Sürüde ${L.length} hayvan</h2><div class="grid">
+      ${grp.map(([ad, a, b]) => `<div class="stat">${ad}<b>${L.filter(h => ay(h) != null && ay(h) >= a && ay(h) < b).length}</b></div>`).join("")}
+      <div class="stat">Yaşı bilinmeyen<b>${L.filter(h => !h.dogum).length}</b></div>
+      <div class="stat">Dişi / Erkek<b>${L.filter(h => h.cins === "Dişi").length} / ${L.filter(h => h.cins === "Erkek").length}</b></div></div></div>
+    <div class="card"><div class="row"><h2>Küpe numaraları ve yaşlar</h2><select style="width:auto" onchange="SIRA=this.value;render()">${opt("kupe", "Küpe no'ya göre", SIRA === "kupe")}${opt("yas", "En yaşlı önce", SIRA === "yas")}${opt("genc", "En genç önce", SIRA === "genc")}</select></div>
+      <input placeholder="Ara (küpe no / ad)" oninput="filtre(this.value,'lt')"><div class="scroll"><table id="lt"><tr><th>#</th><th>Küpe no</th><th>Tür</th><th>Doğum</th><th>Yaş</th><th class="n">Kuzulama</th></tr>
+      ${[...L].sort(sirala).map((h, i) => { const k = kz(h.kupe); return `<tr onclick="duzenle('hayvanlar','${h.id}');V='hayvan';render()" style="cursor:pointer"><td class="mut">${i + 1}</td><td><b>${esc(h.kupe)}</b>${h.ad ? ` <span class="mut">${esc(h.ad)}</span>` : ""}</td><td>${h.tur} ${h.cins === "Dişi" ? "♀" : "♂"}</td><td>${trT(h.dogum)}</td><td><b>${yasYaz(h)}</b></td><td class="n">${k.length ? `${k.length} / ${k.reduce((s, z) => s + (+z.sayi || 0), 0)} kuzu` : "-"}</td></tr>`; }).join("") || `<tr><td colspan=6 class="mut">Henüz hayvan yok. Aşağıdan toplu ekleyebilirsiniz.</td></tr>`}</table></div>
+      <div class="mut">Satıra dokunarak hayvanı düzenleyebilirsiniz. Satılan/ölen hayvanlar listede görünmez.</div></div>
+    <div class="card"><h2>Toplu hayvan ekle</h2><div class="mut">Her satıra bir küpe no yazın. İsterseniz yanına boşlukla doğum tarihini (gg.aa.yyyy) veya doğum yılını ekleyin. Örnek:<br>TR220001 15.03.2023<br>TR220002 2021</div>
+      <textarea id="tb_liste" rows="6"></textarea>
+      <div class="f2"><div><label>Tür</label><select id="tb_tur">${opt("Koyun", "Koyun")}${opt("Keçi", "Keçi")}</select></div><div><label>Cinsiyet</label><select id="tb_cins">${opt("Dişi", "Dişi")}${opt("Erkek", "Erkek")}</select></div></div>
+      <button class="btn" onclick="topluEkle()">Ekle</button></div>`;
+  },
+
+  maliyet() {
+    const y = YEMLER[YEM], son = yemFiyat(YEM), b = borsaYem(YEM);
+    const satir = k => { const f = yemFiyat(k), bb = borsaYem(k), x = f ? f.kg : bb && bb.ort;
+      return `<tr><td><b>${YEMLER[k].ad}</b><div class="mut">${f ? "Sizin fiyatınız · " + trT(f.tarih) : bb ? "Borsa · " + trT(bb.tarih) : "Fiyat girilmedi"}</div></td><td class="n">${x ? fmt(x, 2) + " ₺" : "-"}</td><td class="n"><b>${x ? fmt(x * 50, 2) + " ₺" : "-"}</b></td></tr>`; };
+    const gecmis = D.yemFiyat.filter(x => x.yem === YEM).sort((a, b) => b.tarih.localeCompare(a.tarih));
+    return `<div class="secim">${Object.entries(YEMLER).map(([k, v]) => `<button class="${k === YEM ? "on" : ""}" onclick="YEM='${k}';render()">${v.ad}</button>`).join("")}</div>
+    <div class="card"><h2>${y.ad} – birim maliyet</h2><div class="grid">
+      <div class="stat">1 kg<b class="price">${son ? fmt(son.kg, 2) + " ₺" : "–"}</b><span class="mut">${son ? "alış: " + trT(son.tarih) : "fiyat girin"}</span></div>
+      <div class="stat">50 kg (1 çuval)<b class="price">${son ? fmt(son.kg * 50, 2) + " ₺" : "–"}</b><span class="mut">${son && son.not ? esc(son.not) : ""}</span></div></div>
+      ${b ? `<h3>Edirne Ticaret Borsası (${trT(b.tarih)})</h3><div class="grid"><div class="stat">1 kg<b>${fmt(b.ort, 2)} ₺</b><span class="mut">${fmt(b.min, 2)} – ${fmt(b.max, 2)}</span></div><div class="stat">50 kg<b>${fmt(b.ort * 50, 2)} ₺</b><span class="mut">${fmt(b.min * 50, 2)} – ${fmt(b.max * 50, 2)}</span></div></div>` : YEM === "kaba" ? `<div class="mut" style="margin-top:8px">Kaba yem borsada işlem görmediği için fiyatı kendiniz girin.</div>` : `<div class="mut">Borsa fiyatı yükleniyor…</div>`}</div>
+    <div class="card"><h2>${y.ad} alış fiyatı gir</h2>
+      <div class="f2"><div><label>Fiyat (TL)</label><input id="m_fiyat" type="number" step="0.01" inputmode="decimal" oninput="mHesap()"></div>
+      <div><label>Birim</label><select id="m_birim" onchange="mHesap()">${opt("1", "1 kg fiyatı")}${opt("50", "50 kg (çuval) fiyatı", true)}</select></div></div>
+      <div class="f2"><div><label>Tarih</label><input id="m_tarih" type="date" value="${bugun()}"></div><div><label>Not (satıcı...)</label><input id="m_not"></div></div>
+      <div class="mut" id="m_sonuc" style="margin-top:6px"></div>
+      <button class="btn" onclick="yemFiyatKaydet()">Kaydet</button>
+      ${gecmis.length ? `<h3>Geçmiş alış fiyatları</h3><div class="scroll"><table><tr><th>Tarih</th><th class="n">1 kg</th><th class="n">50 kg</th><th></th></tr>${gecmis.map(x => `<tr><td>${trT(x.tarih)}${x.not ? `<div class="mut">${esc(x.not)}</div>` : ""}</td><td class="n">${fmt(x.kg, 2)} ₺</td><td class="n">${fmt(x.kg * 50, 2)} ₺</td><td class="n"><button class="del" onclick="sil('yemFiyat','${x.id}')">Sil</button></td></tr>`).join("")}</table></div>` : ""}</div>
+    <div class="card"><h2>Tüm yemler</h2><div class="scroll"><table><tr><th>Yem</th><th class="n">1 kg</th><th class="n">50 kg</th></tr>${Object.keys(YEMLER).map(satir).join("")}</table></div></div>`;
+  },
+
   kuzu() {
     const e = EDIT && EDIT.tip === "kuzulama" ? D.kuzulama.find(x => x.id === EDIT.id) : null;
     const k = e || { tarih: bugun(), sayi: 1, erkek: "", disi: "", olu: "" };
@@ -199,12 +242,12 @@ const VIEWS = {
     return `<div class="card"><h2>Edirne Ticaret Borsası – canlı hayvan salonu</h2>${fiyatKart(false)}
       <div class="mut" style="margin-top:6px">Fiyatlar baskül (canlı kg) TL/kg. Tarih, o ürünün borsada son işlem gördüğü gündür. Kaynak: online.etb.org.tr</div></div>
     <div class="card"><h2>Kuzu değeri hesapla</h2><div class="f2"><div><label>Canlı ağırlık (kg)</label><input id="h_kg" type="number" inputmode="decimal" oninput="hesap()"></div>
-      <div><label>Ürün</label><select id="h_urun" onchange="hesap()">${Object.values(son).sort((a, b) => (a.kod === "1102002" ? -2 : a.kod === "1102004" ? -1 : 0) - (b.kod === "1102002" ? -2 : b.kod === "1102004" ? -1 : 0)).map(x => opt(x.kod, x.urun)).join("")}</select></div></div>
+      <div><label>Ürün</label><select id="h_urun" onchange="hesap()">${Object.values(son).filter(x => x.kod.startsWith("1102")).sort((a, b) => (a.kod === "1102002" ? -2 : a.kod === "1102004" ? -1 : 0) - (b.kod === "1102002" ? -2 : b.kod === "1102004" ? -1 : 0)).map(x => opt(x.kod, x.urun)).join("")}</select></div></div>
       <div class="big price" id="h_sonuc" style="margin-top:8px">–</div></div>
     <div class="card"><h2>Kuzu – fiyat geçmişi</h2>${grafikFiyat(kuzu)}${tabloFiyat(kuzu)}</div>
     <div class="card"><h2>Süt Kuzusu – fiyat geçmişi</h2>${grafikFiyat(sut)}${tabloFiyat(sut)}</div>
     <div class="card"><h2>Diğer küçükbaş (son işlem)</h2><div class="scroll"><table><tr><th>Ürün</th><th>Tarih</th><th class="n">En az</th><th class="n">En çok</th><th class="n">Ortalama</th><th class="n">Hayvan</th></tr>
-      ${Object.values(son).map(x => `<tr><td>${esc(x.urun)}</td><td>${trT(x.tarih)}</td><td class="n">${fmt(x.min, 2)}</td><td class="n">${fmt(x.max, 2)}</td><td class="n"><b>${fmt(x.ort, 2)}</b></td><td class="n">${x.hayvan ?? ""}</td></tr>`).join("")}</table></div></div>`;
+      ${Object.values(son).filter(x => x.kod.startsWith("1102")).map(x => `<tr><td>${esc(x.urun)}</td><td>${trT(x.tarih)}</td><td class="n">${fmt(x.min, 2)}</td><td class="n">${fmt(x.max, 2)}</td><td class="n"><b>${fmt(x.ort, 2)}</b></td><td class="n">${x.hayvan ?? ""}</td></tr>`).join("")}</table></div></div>`;
   },
 
   hayvan() {
@@ -272,6 +315,36 @@ function grafikYem(l) {
   return `<h3>Son ${l.length} gün <span style="color:#eab308">■ saman</span> <span style="color:#22c55e">■ ot</span> <span style="color:#3b82f6">■ yem</span></h3><svg viewBox="0 0 ${W} ${H}" width="100%">${l.map((x, i) => r(x, "saman", i, "#eab308") + r(x, "ot", i, "#22c55e") + r(x, "yem", i, "#3b82f6")).join("")}
     <text x="10" y="${H - 2}">${trT(l[0].tarih)}</text><text x="${W - 70}" y="${H - 2}">${trT(l[l.length - 1].tarih)}</text></svg>`;
 }
+function yemFiyat(k) { return D.yemFiyat.filter(x => x.yem === k).sort((a, b) => b.tarih.localeCompare(a.tarih) || b.id.localeCompare(a.id))[0]; }
+function borsaYem(k) {
+  const kod = YEMLER[k].kod; if (!kod) return null;
+  const x = (HUB || []).find(r => r.UrunKodu === kod) || (FIYAT && FIYAT.son && FIYAT.son[kod]);
+  return x && (x.UrunKodu ? { tarih: x.Tarih, min: x.MinFiyat, max: x.MaxFiyat, ort: x.OrtFiyat } : x);
+}
+function mHesap() {
+  const f = num(val("m_fiyat")), b = +val("m_birim"), kg = f / b;
+  document.getElementById("m_sonuc").textContent = f ? `1 kg = ${fmt(kg, 2)} ₺ · 50 kg = ${fmt(kg * 50, 2)} ₺` : "";
+}
+function yemFiyatKaydet() {
+  const f = num(val("m_fiyat")), tarih = val("m_tarih"); if (!f || !tarih) return toast("Fiyat ve tarih gerekli");
+  D.yemFiyat.push({ id: uid(), yem: YEM, tarih, kg: f / +val("m_birim"), not: val("m_not") }); save();
+}
+function topluEkle() {
+  const tur = val("tb_tur"), cins = val("tb_cins"); let n = 0, atla = 0;
+  for (const satir of val("tb_liste").split("\n")) {
+    const p = satir.trim().split(/\s+/); if (!p[0]) continue;
+    if (D.hayvanlar.find(h => h.kupe === p[0])) { atla++; continue; }
+    let dogum = ""; const t = p[1] || "";
+    let m = t.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+    if (m) dogum = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    else if (/^\d{4}$/.test(t)) dogum = t + "-01-01";
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(t)) dogum = t;
+    D.hayvanlar.push({ id: uid(), kupe: p[0], ad: "", tur, cins, dogum, not: "", aktif: true }); n++;
+  }
+  if (!n) return toast(atla ? "Hepsi zaten kayıtlı" : "Küpe no girin");
+  save(`${n} hayvan eklendi${atla ? `, ${atla} zaten vardı` : ""}`);
+}
+function menu(a) { document.getElementById("nav").classList.toggle("acik", a); document.getElementById("perde").classList.toggle("acik", a); }
 function hesap() {
   const kg = num(val("h_kg")), x = birlesik()[val("h_urun")];
   document.getElementById("h_sonuc").textContent = kg && x ? `≈ ${fmt(kg * x.ort)} ₺  (${fmt(kg * x.min)} – ${fmt(kg * x.max)})` : "–";
@@ -279,7 +352,7 @@ function hesap() {
 async function fiyatYukle() {
   try { const r = await fetch("data/fiyat.json?t=" + Date.now()); if (r.ok) FIYAT = await r.json(); } catch (e) {}
   render();
-  try { const r = await fetch(API); if (r.ok) CANLI = await r.json(); } catch (e) {}
+  await Promise.all([fetch(API).then(r => r.json()).then(j => CANLI = j).catch(() => {}), fetch(API0).then(r => r.json()).then(j => HUB = j).catch(() => {})]);
   render();
 }
 
@@ -350,9 +423,10 @@ function csvAl() {
 }
 
 /* ---------- Genel ---------- */
-function go(v) { V = v; EDIT = null; location.hash = v; render(); scrollTo(0, 0); }
+function go(v) { V = v; EDIT = null; location.hash = v; menu(false); render(); scrollTo(0, 0); }
 function render() {
   document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.v === V));
+  document.getElementById("baslik").textContent = BASLIK[V] || "Özet";
   document.getElementById("app").innerHTML = (VIEWS[V] || VIEWS.ozet)();
 }
 function bildirim() {
@@ -362,6 +436,7 @@ function bildirim() {
   localStorage.setItem("suru_bildirim", bugun());
   new Notification("Sürü Takip – aşı zamanı", { body: acil.map(p => p.tur.ad).join(", "), icon: "icon.svg" });
 }
+document.getElementById("menuBtn").onclick = () => menu(true);
 document.getElementById("nav").onclick = e => { if (e.target.dataset.v) go(e.target.dataset.v); };
 addEventListener("hashchange", () => { const v = location.hash.slice(1); if (v && v !== V) { V = v; EDIT = null; render(); } });
 render(); fiyatYukle(); bildirim();
