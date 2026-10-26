@@ -1,0 +1,32 @@
+plugins { id "com.android.application" }
+
+android {
+    namespace "com.okira.diptavan"
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.okira.diptavan"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    signingConfigs {
+        release {
+            // anahtar depoda tutulmaz: APK_KEYSTORE / APK_KEY_PASS ortam değişkenleriyle verilir
+            storeFile file(System.getenv("APK_KEYSTORE") ?: "release.jks")
+            storePassword System.getenv("APK_KEY_PASS")
+            keyAlias "diptavan"
+            keyPassword System.getenv("APK_KEY_PASS")
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
