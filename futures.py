@@ -4,8 +4,9 @@ Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinle
 5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI, MACD ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
-zarar %10'a ulaşınca işlem kapatılır; kâr %20'yi geçince iz süren stop devreye girer. Her işlem isolated $20
-teminatla açılır; aynı anda en fazla 5 işlem açık olur (doluyken sinyal bildirilir, işlem açılmaz). 7/24 çalışır (hafta sonu dahil).
+zarar %20'ye ulaşınca işlem kapatılır; kâr %20'yi geçince iz süren stop devreye girer. Her işlem isolated $20
+teminatla açılır; aynı anda en fazla 5 işlem, bir yönde en fazla 3 işlem açık olur (doluyken sinyal bildirilir,
+işlem açılmaz; aynı anda gelen sinyallerden puanı en yüksek olanlar önce açılır). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
 """
 import argparse
@@ -39,11 +40,12 @@ MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "4"))  # üst zaman dilimin
 MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman diliminden en az bu kadarı onaylamalı
 
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
-SL_ROE = float(os.getenv("SL_ROE", "10"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %1)
+SL_ROE = float(os.getenv("SL_ROE", "20"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %2)
 TRAIL_START_ROE = float(os.getenv("TRAIL_START_ROE", "20"))  # kâr bu ROE'ye ulaşınca iz süren stop başlar
 TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden izler
 MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
 MAX_OPEN = int(os.getenv("MAX_OPEN", "5"))  # aynı anda en fazla açık işlem
+MAX_SAME_DIR = int(os.getenv("MAX_SAME_DIR", "3"))  # bir yönde (LONG ya da SHORT) en fazla açık işlem
 
 STATE_FILE = os.getenv("STATE_FILE", "futures_state.json")
 REPORT_TZ = os.getenv("REPORT_TZ", "Europe/Istanbul")  # gün sonu raporu bu saat diliminde gece yarısı gönderilir
@@ -190,7 +192,8 @@ def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
              f"Giriş fiyatı: {row['Close']:.{dp}f}",
              f"Zarar durdur (-%{SL_ROE:g} = -${usd(SL_ROE):.2f}): {sl:.{dp}f}",
              f"İz süren stop: kâr +%{TRAIL_START_ROE:g} (+${usd(TRAIL_START_ROE):.2f}) olunca devreye girer: {act:.{dp}f}",
-             f"Sabit hedef yok; stop en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip eder.", ""]
+             f"Sabit hedef yok; stop en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip eder.",
+             f"💡 Limit emirle girin ({row['Close']:.{dp}f}); piyasa emrine göre ücret ~%60 daha düşük.", ""]
     for n in TIMEFRAMES:
         agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == d]
         lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/6  {', '.join(agree) if agree else '-'}")
@@ -208,8 +211,9 @@ def _close_text(sym: str, dp: int, pos: dict, row: pd.Series, exit_price: float,
             f"  ·  fiyat {r / LEVERAGE:+.2f}%")
 
 
-def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, can_open=lambda: True) -> list:
-    """Bir coinin mumlarını sırayla işler (coin başına tek işlem). (zaman, tür, mesaj, bilgi) listesi döner."""
+def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, on_signal=None) -> list:
+    """Bir coinin mumlarını sırayla işler (coin başına tek işlem). (zaman, tür, mesaj, bilgi) listesi döner.
+    on_signal verilirse yeni sinyalde işlem açılmaz, on_signal(row, yön) çağrılır (açma kararı sonra verilir)."""
     events = []
     rows = data if since is None else data[data["close_time"] > since]
     for _, row in rows.iterrows():
@@ -250,19 +254,37 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
                                 "usd": round(usd(roe(pos["dir"], pos["entry"], exit_price), pos.get("margin", MARGIN_USD)), 2)}))
                 cs["position"] = pos = None
         sig = int(row["new_signal"])
-        if sig != 0 and not pos and not can_open():
-            events.append((row["close_time"], "LIMIT",
-                           f"{'🟢' if sig == 1 else '🔴'}⚠️ LİMİT DOLU ({MAX_OPEN}/{MAX_OPEN} işlem açık) – bu işlem AÇILMADI\n\n"
-                           + _open_text(sym, dp, row, sig).replace(" AÇ (", " SİNYALİ ("),
-                           {"sym": sym, "dp": dp, "dir": sig, "price": float(row["Close"])}))
-        elif sig != 0 and not pos:
-            entry = float(row["Close"])
-            act, sl = levels(sig, entry)
-            events.append((row["close_time"], "SINYAL", _open_text(sym, dp, row, sig),
-                           {"sym": sym, "dp": dp, "dir": sig, "price": entry}))
-            cs["position"] = {"dir": sig, "entry": entry, "act": act, "sl": sl, "peak": entry, "trail": False, "dp": dp,
-                              "margin": MARGIN_USD, "time": row["close_time"].isoformat()}
+        if sig != 0 and not pos:
+            if on_signal is not None:
+                on_signal(row, sig)
+            else:
+                events.append(open_position(sym, dp, row, sig, cs))
+                pos = cs["position"]
     return events
+
+
+def open_position(sym: str, dp: int, row: pd.Series, sig: int, cs: dict):
+    entry = float(row["Close"])
+    act, sl = levels(sig, entry)
+    cs["position"] = {"dir": sig, "entry": entry, "act": act, "sl": sl, "peak": entry, "trail": False, "dp": dp,
+                      "margin": MARGIN_USD, "time": row["close_time"].isoformat()}
+    return (row["close_time"], "SINYAL", _open_text(sym, dp, row, sig),
+            {"sym": sym, "dp": dp, "dir": sig, "price": entry})
+
+
+def strength(row: pd.Series, d: int) -> int:
+    """Sinyal gücü: 5dk puanı + üst zaman dilimlerinde aynı yöndeki puanlar."""
+    return d * int(row["score_5dk"]) + sum(max(d * int(row[f"score_{n}"]), 0) for n in HIGHER)
+
+
+def _limit_event(sym: str, dp: int, row: pd.Series, sig: int, positions: dict):
+    n_dir = sum(p["dir"] == sig for p in positions.values())
+    head = (f"LİMİT DOLU ({MAX_OPEN}/{MAX_OPEN} işlem açık)" if len(positions) >= MAX_OPEN
+            else f"YÖN LİMİTİ DOLU ({n_dir}/{MAX_SAME_DIR} {'LONG' if sig == 1 else 'SHORT'} açık)")
+    return (row["close_time"], "LIMIT",
+            f"{'🟢' if sig == 1 else '🔴'}⚠️ {head} – bu işlem AÇILMADI\n\n"
+            + _open_text(sym, dp, row, sig).replace(" AÇ (", " SİNYALİ ("),
+            {"sym": sym, "dp": dp, "dir": sig, "price": float(row["Close"])})
 
 
 def _scan_one(sym: str):
@@ -287,7 +309,8 @@ def _load_state() -> dict:
 
 def _status_text(results: dict, state: dict) -> str:
     pos = state["positions"]
-    lines = ["🕐 SAATLİK DURUM – Futures", f"Taranan coin: {len(results)}  |  açık işlem: {len(pos)}/{MAX_OPEN}", ""]
+    lines = ["🕐 SAATLİK DURUM – Futures", f"Taranan coin: {len(results)}  |  açık işlem: {len(pos)}/{MAX_OPEN}"
+             f" (yön başına en fazla {MAX_SAME_DIR})", ""]
     for sym, p in list(pos.items())[:40]:
         data = results.get(sym)
         if data is None:
@@ -373,25 +396,43 @@ def check_and_notify(send: bool = True):
     now = pd.Timestamp.now(tz="UTC")
     if "daily" not in state:
         state["daily"] = _seed_daily(state)
+
+    def emit(events):
+        for t, kind, text, info in events:
+            print(f"\n{text}")
+            _count(state["daily"], t, kind, info)
+            if kind in ("SINYAL", "KAPAT"):
+                state["history"].append({"t": dashboard.ts(t), "kind": kind, **info})
+            if send and now - t <= MAX_EVENT_AGE:
+                send_telegram(text)
+
+    def run(sym, data, since, on_signal):
+        cs = {"position": state["positions"].get(sym)}
+        emit(process_events(sym, places.get(sym, 2), data, cs, since=since, on_signal=on_signal))
+        if cs["position"]:
+            state["positions"][sym] = cs["position"]
+        else:
+            state["positions"].pop(sym, None)
+
+    # 1) önce tüm coinlerde kapanışlar işlenir, yeni sinyaller aday olarak toplanır
+    cands = {}
     for sym, data in results.items():
-        dp = places.get(sym, 2)
-        last_t = data["close_time"].iloc[-1]
         since = state["last"].get(sym)
         if since is not None:
-            cs = {"position": state["positions"].get(sym)}
-            can_open = lambda: len([s for s in state["positions"] if s != sym]) < MAX_OPEN
-            for t, kind, text, info in process_events(sym, dp, data, cs, since=pd.Timestamp(since), can_open=can_open):
-                print(f"\n{text}")
-                _count(state["daily"], t, kind, info)
-                if kind in ("SINYAL", "KAPAT"):
-                    state["history"].append({"t": dashboard.ts(t), "kind": kind, **info})
-                if send and now - t <= MAX_EVENT_AGE:
-                    send_telegram(text)
-            if cs["position"]:
-                state["positions"][sym] = cs["position"]
-            else:
-                state["positions"].pop(sym, None)
-        state["last"][sym] = last_t.isoformat()
+            run(sym, data, pd.Timestamp(since), lambda row, sig, sym=sym: cands.__setitem__(sym, (row, sig)))
+        state["last"][sym] = data["close_time"].iloc[-1].isoformat()
+    # 2) adaylar puanı en yüksekten başlayarak açılır (toplam ve yön limiti)
+    for sym, (row, sig) in sorted(cands.items(), key=lambda kv: (-strength(kv[1][0], kv[1][1]), kv[1][0]["close_time"])):
+        dp, pos = places.get(sym, 2), state["positions"]
+        if sym in pos:
+            continue
+        if len(pos) >= MAX_OPEN or sum(p["dir"] == sig for p in pos.values()) >= MAX_SAME_DIR:
+            emit([_limit_event(sym, dp, row, sig, pos)])
+            continue
+        cs = {"position": None}
+        emit([open_position(sym, dp, row, sig, cs)])
+        pos[sym] = cs["position"]
+        run(sym, results[sym], row["close_time"], lambda row, sig: None)  # sinyal mumundan sonraki mumlar
     state["history"] = state["history"][-MAX_HISTORY:]
     today = _day(now)
     for day in sorted(d for d in state["daily"] if d < today):
@@ -439,6 +480,7 @@ def export_dashboard(results: dict, top: list, places: dict, state: dict):
         "sl_roe": SL_ROE,
         "margin_usd": MARGIN_USD,
         "max_open": MAX_OPEN,
+        "max_same_dir": MAX_SAME_DIR,
         "positions": state["positions"],
         "history": state["history"],
         "stats": {**dashboard.stats(state["history"]),
