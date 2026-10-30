@@ -1,11 +1,6 @@
 {
   "heartbeat": "2026-10",
-  "last_processed": "2026-10-30T03:00:00+00:00",
+  "last_processed": "2026-10-30T03:15:00+00:00",
   "last_status": "2026-10-30T03:00:00+00:00",
-  "position": {
-    "dir": -1,
-    "entry": 4015.24,
-    "target": 3995.24,
-    "time": "2026-10-29T23:30:00+00:00"
-  }
+  "position": null
 }
