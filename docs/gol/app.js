@@ -362,8 +362,8 @@ function renderKupon() {
   const now = Date.now() / 1000;
   const active = all.filter((c) => c.status === "bekliyor" && Math.max(...c.legs.map((l) => l.ts)) + 2.5 * 3600 > now);
   const done = all.filter((c) => c.status === "kazandı" || c.status === "kaybetti");
-  let h = `<p class="note">Her gün 09:00'dan sonra o günün <b>iddaa maçlarından</b> 12 kupon hazırlanır, her türden 2 adet:
-    İY/MS, İY + 2. yarı skoru, İY 1.5 / 2.5 Üst, 3.5 / 4.5 / 5.5 Üst, Maç sonucu (MS) ve yüksek oranlı. Kuponlar 2-5 maçlıktır; toplam oranı <b>3.50'nin altında kupon yoktur</b> (yüksek oranlıda en az 10). Bu şartı sağlayan kombinasyonlar arasından tutma olasılığı en yüksek olan seçilir.
+  let h = `<p class="note">Her gün 09:00'dan sonra o günün <b>iddaa maçlarından</b> 13 kupon hazırlanır: İY/MS, İY 1.5 / 2.5 Üst, 3.5 / 4.5 / 5.5 Üst, Maç sonucu (MS) ve yüksek oranlıdan 2'şer adet (2-5 maçlık),
+    İY + 2. yarı skorundan 4'lü, 5'li ve 6'lı birer kupon. Kuponlarda toplam oranı <b>3.50'nin altında kupon yoktur</b> (yüksek oranlıda en az 10). Bu şartı sağlayan kombinasyonlar arasından tutma olasılığı en yüksek olan seçilir.
     Oranlar iddaa'dan; iddaa'da olmayan market (çoğunlukla İY/MS) için aynı maçın Bet365 / William Hill oranı kullanılır (tabloda belirtilir).
     Olasılık: oranın ima ettiği olasılık, son 3 ayda aynı oran seviyesindeki maçların gerçek sonuçlarına göre düzeltilir. Son güncelleme: ${fmtT(KUPON.updated)}</p>`;
   const sum = (kind) => { const d = done.filter((c) => c.kind === kind); const w = d.filter((c) => c.status === "kazandı"); const ret = w.reduce((s, c) => s + c.odd, 0);
