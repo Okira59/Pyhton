@@ -30,8 +30,15 @@ BB_PERIOD, BB_STD = 20, 2.0
 MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
 STOCH_RSI, STOCH_PERIOD, STOCH_K, STOCH_D = 14, 14, 3, 3
 
-# Kâr al: sinyalden sonra fiyat bu kadar pip kâra ulaşınca "KAPAT" sinyali
-TP_PIPS = float(os.getenv("TP_PIPS", "20"))
+# Sinyal: 15dk EMA + Bollinger + MACD DEMA aynı yönde ve StochRSI son STOCH_LOOKBACK mumda
+# (20 x 15dk = 5 saat) 0 (AL) / 100 (SAT) seviyesine değmiş. 4s göstergeler bilgi amaçlı.
+STOCH_LOOKBACK = int(os.getenv("STOCH_LOOKBACK", "20"))
+TREND_INDICATORS = ["EMA", "BOLLINGER", "MACD"]
+# Çıkış: sabit kâr al yok; -SL_PIPS zarar durdur, kâr TRAIL_START pip olunca stop
+# zirve kârın TRAIL_GAP pip gerisinden takip eder; ters sinyal işlemi kapatıp çevirir.
+SL_PIPS = float(os.getenv("SL_PIPS", "15"))
+TRAIL_START = float(os.getenv("TRAIL_START", "20"))
+TRAIL_GAP = float(os.getenv("TRAIL_GAP", "10"))
 PIP_SIZE = float(os.getenv("PIP_SIZE", "1.0"))  # altında 1 pip = 1 $ (20 pip = 20 $)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -182,8 +189,9 @@ def add_signals(df: pd.DataFrame) -> pd.DataFrame:
                                 (c < df.bb_mid) & (c > df.bb_low))
     # MACD DEMA: MACD çizgisi sinyal çizgisinin üstünde -> yükseliş
     df["MACD"] = direction(df.macd > df.macd_sig, df.macd < df.macd_sig)
-    # StochRSI: %K tam 0,00 -> AL, tam 100,00 -> SAT
-    df["STOCHRSI"] = direction(stoch_buy(df.k), stoch_sell(df.k))
+    # StochRSI: %K son STOCH_LOOKBACK mumda tam 0,00'a değdi -> AL, 100,00'e değdi -> SAT (en son değen)
+    touch = direction(stoch_buy(df.k), stoch_sell(df.k)).replace(0, float("nan"))
+    df["STOCHRSI"] = touch.ffill(limit=STOCH_LOOKBACK - 1).fillna(0).astype(int)
 
     df["score"] = df[INDICATORS].sum(axis=1)
     return df
@@ -199,9 +207,10 @@ def combine(m15: pd.DataFrame, h4: pd.DataFrame) -> pd.DataFrame:
                            on="close_time", direction="backward")
     merged.index = a.index
 
-    n = len(INDICATORS)
-    buy = (merged["score"] == n) & (merged["h4_score"] == n)
-    sell = (merged["score"] == -n) & (merged["h4_score"] == -n)
+    trend = merged[TREND_INDICATORS].sum(axis=1)
+    n = len(TREND_INDICATORS)
+    buy = (trend == n) & (merged["STOCHRSI"] == 1)
+    sell = (trend == -n) & (merged["STOCHRSI"] == -1)
     merged["signal"] = 0
     merged.loc[buy, "signal"] = 1
     merged.loc[sell, "signal"] = -1
@@ -225,6 +234,8 @@ def format_report(row: pd.Series) -> str:
     for ind in INDICATORS:
         lines.append(f"{ind:<10} {_arrow(row[ind]):<8} {_arrow(row['h4_' + ind]):<8}")
     lines.append(f"Sonuç: {sig}")
+    lines.append("(Kural: 15dk EMA + Bollinger + MACD DEMA aynı yönde ve StochRSI son 5 saatte "
+                 "0'a (AL) / 100'e (SAT) değdi. 4s bilgi amaçlı.)")
     return "\n".join(lines)
 
 
@@ -289,53 +300,74 @@ def position_line(pos, price: float) -> str:
     pct = pos["dir"] * (price - pos["entry"]) / pos["entry"] * 100
     pips = pos["dir"] * (price - pos["entry"]) / PIP_SIZE
     side = "🟢 AL" if pos["dir"] == 1 else "🔴 SAT"
+    stop = f"{'🔒 İz süren stop' if pos.get('trail') else 'Zarar durdur'}: {pos['sl']:.2f}" if "sl" in pos else ""
     return (f"Açık işlem: {side} @ {pos['entry']:.2f}\n"
-            f"Anlık {'kâr' if pct >= 0 else 'zarar'}: {pct:+.2f}%  ({pips:+.1f} pip)")
+            f"Anlık {'kâr' if pct >= 0 else 'zarar'}: {pct:+.2f}%  ({pips:+.1f} pip)\n{stop}")
 
 
-def _target(direction: int, entry: float) -> float:
-    return entry + direction * TP_PIPS * PIP_SIZE
+def _sl(direction: int, entry: float) -> float:
+    return entry - direction * SL_PIPS * PIP_SIZE
 
 
 def _open_text(row: pd.Series) -> str:
-    target = _target(int(row["new_signal"]), row["Close"])
-    return f"{format_report(row)}\nKâr al hedefi (+{TP_PIPS:g} pip): {target:.2f}"
+    d, c = int(row["new_signal"]), float(row["Close"])
+    return (f"{format_report(row)}\n"
+            f"Zarar durdur (-{SL_PIPS:g} pip = -${SL_PIPS * PIP_SIZE:g}): {_sl(d, c):.2f}\n"
+            f"Sabit kâr al yok: kâr +{TRAIL_START:g} pip ({c + d * TRAIL_START * PIP_SIZE:.2f}) olunca "
+            f"iz süren stop devreye girer, zirvenin {TRAIL_GAP:g} pip gerisinden takip eder.\n"
+            f"🛑 Girişte zarar durdur emri koyun: {_sl(d, c):.2f}")
 
 
-def _close_text(pos: dict, row: pd.Series) -> str:
+def _close(pos: dict, t, price: float, reason: str) -> tuple:
+    pips = pos["dir"] * (price - pos["entry"]) / PIP_SIZE
+    pct = pos["dir"] * (price - pos["entry"]) / pos["entry"] * 100
     side = "AL" if pos["dir"] == 1 else "SAT"
-    return (f"🎯 İŞLEMİ KAPAT  |  {row['close_time']:%Y-%m-%d %H:%M} UTC\n"
-            f"{side} işlemi +{TP_PIPS:g} pip kâra ulaştı.\n"
-            f"Giriş: {pos['entry']:.2f}  →  Hedef: {pos['target']:.2f}\n"
-            f"Güncel fiyat: {row['Close']:.2f}")
+    text = (f"{'✅' if pips >= 0 else '❌'} İŞLEMİ KAPAT  |  {t:%Y-%m-%d %H:%M} UTC\n"
+            f"{side} işlemi kapandı: {reason}\n"
+            f"Giriş: {pos['entry']:.2f}  →  Çıkış: {price:.2f}\n"
+            f"Sonuç: {pips:+.1f} pip ({pips * PIP_SIZE:+.2f}$, {pct:+.2f}%)")
+    return (t, "KAPAT", text, {"dir": pos["dir"], "entry": round(pos["entry"], 2), "exit": round(price, 2),
+                               "pct": round(pct, 3), "pips": round(pips, 1), "reason": reason})
 
 
 def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
-    """Mumları kronolojik işler: kâr al (KAPAT) ve yeni AL/SAT olayları üretir.
+    """Mumları kronolojik işler: zarar durdur / iz süren stop / ters sinyal (KAPAT),
+    iz süren stop başlangıcı (TAKIP) ve yeni AL/SAT olayları üretir.
 
     state["position"] açık işlemi tutar. Dönen liste: (zaman, tür, mesaj, bilgi).
     """
     events = []
     rows = data if since is None else data[data["close_time"] > since]
     for _, row in rows.iterrows():
-        pos = state.get("position")
-        if pos and row["close_time"] > pd.Timestamp(pos["time"]):
-            hit = (row["High"] >= pos["target"]) if pos["dir"] == 1 else (row["Low"] <= pos["target"])
-            if hit:
-                pct = TP_PIPS * PIP_SIZE / pos["entry"] * 100
-                events.append((row["close_time"], "KAPAT", _close_text(pos, row),
-                               {"dir": pos["dir"], "entry": round(pos["entry"], 2),
-                                "exit": round(pos["target"], 2), "pct": round(pct, 3)}))
-                state["position"] = None
-        if row["new_signal"] != 0:
-            events.append((row["close_time"], "SINYAL", _open_text(row),
-                           {"dir": int(row["new_signal"]), "price": round(float(row["Close"]), 2)}))
-            state["position"] = {
-                "dir": int(row["new_signal"]),
-                "entry": float(row["Close"]),
-                "target": float(_target(int(row["new_signal"]), row["Close"])),
-                "time": row["close_time"].isoformat(),
-            }
+        t, pos = row["close_time"], state.get("position")
+        if pos and "sl" not in pos:  # eski (sabit kâr al) kayıt
+            pos.update(sl=_sl(pos["dir"], pos["entry"]), peak=0.0, trail=False)
+            pos.pop("target", None)
+        if pos and t > pd.Timestamp(pos["time"]):
+            d, e = pos["dir"], pos["entry"]
+            hi, lo = (row["High"], row["Low"]) if d == 1 else (row["Low"], row["High"])
+            if d * (lo - pos["sl"]) <= 0:  # aynı mumda önce stop varsayılır (temkinli)
+                reason = f"İz süren stop (zirve +{pos['peak']:.1f} pip)" if pos["trail"] else f"-{SL_PIPS:g} pip zarar durdur"
+                events.append(_close(pos, t, pos["sl"], reason))
+                state["position"] = pos = None
+            else:
+                pos["peak"] = max(pos["peak"], d * (hi - e) / PIP_SIZE)
+                if pos["peak"] >= TRAIL_START:
+                    pos["sl"] = e + d * max(d * (pos["sl"] - e) / PIP_SIZE, pos["peak"] - TRAIL_GAP) * PIP_SIZE
+                    if not pos["trail"]:
+                        pos["trail"] = True
+                        events.append((t, "TAKIP",
+                                       f"🔒 İZ SÜREN STOP DEVREDE  |  {t:%Y-%m-%d %H:%M} UTC\n"
+                                       f"{'AL' if d == 1 else 'SAT'} @ {e:.2f} · kâr +{pos['peak']:.1f} pip\n"
+                                       f"Yeni stop: {pos['sl']:.2f} (en az {d * (pos['sl'] - e) / PIP_SIZE:+.1f} pip kilitli)", {}))
+        sig = int(row["new_signal"])
+        if sig and pos and pos["dir"] != sig:
+            events.append(_close(pos, t, float(row["Close"]), "Ters sinyal"))
+            state["position"] = pos = None
+        if sig and not pos:
+            events.append((t, "SINYAL", _open_text(row), {"dir": sig, "price": round(float(row["Close"]), 2)}))
+            state["position"] = {"dir": sig, "entry": float(row["Close"]), "sl": _sl(sig, float(row["Close"])),
+                                 "peak": 0.0, "trail": False, "time": t.isoformat()}
     return events
 
 
@@ -381,7 +413,7 @@ def check_and_notify(require_telegram: bool = True):
 
 def export_dashboard(data: pd.DataFrame, state: dict):
     last = data.iloc[-1]
-    history = dashboard.events_to_list(process_events(data, {}))
+    history = [e for e in dashboard.events_to_list(process_events(data, {})) if e["kind"] != "TAKIP"]
     dashboard.write("sinyal", {
         "symbol": SYMBOL,
         "source": SOURCE_LABEL,
@@ -390,7 +422,10 @@ def export_dashboard(data: pd.DataFrame, state: dict):
         "indicators": {ind: {"15dk": int(last[ind]), "4s": int(last["h4_" + ind])}
                        for ind in INDICATORS},
         "signal": int(last["signal"]),
-        "tp_pips": TP_PIPS,
+        "sl_pips": SL_PIPS,
+        "trail_start": TRAIL_START,
+        "trail_gap": TRAIL_GAP,
+        "stoch_lookback": STOCH_LOOKBACK,
         "pip_size": PIP_SIZE,
         "position": state.get("position"),
         "history": history,
@@ -403,15 +438,15 @@ def export_dashboard(data: pd.DataFrame, state: dict):
 def show_history():
     data = combine(*fetch_data())
     events = process_events(data, {})
-    n_sig = sum(e[1] == "SINYAL" for e in events)
-    n_tp = sum(e[1] == "KAPAT" for e in events)
-    print(f"Son {len(data)} adet 15dk mumda {n_sig} sinyal, {n_tp} kâr al (+{TP_PIPS:g} pip) bulundu:\n")
-    for t, kind, _, _ in events:
+    closes = [e[3] for e in events if e[1] == "KAPAT"]
+    print(f"Son {len(data)} adet 15dk mumda {sum(e[1] == 'SINYAL' for e in events)} sinyal, "
+          f"{len(closes)} kapanış ({sum(c['pips'] > 0 for c in closes)} kârlı, "
+          f"toplam {sum(c['pips'] for c in closes):+.1f} pip) bulundu:\n")
+    for t, kind, _, info in events:
         if kind == "SINYAL":
-            row = data[data["close_time"] == t].iloc[0]
-            print(f"{t:%Y-%m-%d %H:%M} UTC  {_arrow(row['new_signal'])}  @ {row['Close']:.2f}")
-        else:
-            print(f"{t:%Y-%m-%d %H:%M} UTC  🎯 KAPAT (+{TP_PIPS:g} pip)")
+            print(f"{t:%Y-%m-%d %H:%M} UTC  {_arrow(info['dir'])}  @ {info['price']:.2f}")
+        elif kind == "KAPAT":
+            print(f"{t:%Y-%m-%d %H:%M} UTC  KAPAT {info['pips']:+.1f} pip · {info['reason']}")
 
 
 if __name__ == "__main__":

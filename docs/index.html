@@ -36,9 +36,11 @@
   </section>
 
   <section class="card">
-    <h2>Göstergeler <span class="muted small">15dk + 4s · 4 gösterge · canlı (oluşan mum dahil)</span></h2>
+    <h2>Göstergeler <span class="muted small">15dk karar verir · 4s bilgi amaçlı · canlı (oluşan mum dahil)</span></h2>
     <table id="s-ind"></table>
     <div id="s-result" class="result"></div>
+    <p class="muted small">AL: 15dk EMA, Bollinger ve MACD DEMA yukarı ve StochRSI son 5 saatte 0'a değdi. SAT: tersi (100).
+    Zarar durdur −15 pip; kâr +20 pip olunca iz süren stop zirvenin 10 pip gerisinden takip eder; ters sinyal işlemi çevirir.</p>
     <h3>Açık işlem</h3>
     <div id="s-pos"></div>
   </section>
@@ -54,25 +56,26 @@
 </main>
 <script src="common.js"></script>
 <script>
-// bot.py add_signals ile aynı kurallar (EMA 20/50, Bollinger 20/2, MACD DEMA, StochRSI 0/100)
-function altinDirs(rows) {
+// bot.py add_signals/combine ile aynı kurallar (EMA 20/50, Bollinger 20/2, MACD DEMA,
+// StochRSI son 20 mumda en son 0'a (AL) / 100'e (SAT) değdi)
+function altinDirs(rows, look = 20) {
   const c = rows.map(x => x[4]), i = c.length - 1, C = c[i];
   const ef = emaA(c, 20), es = emaA(c, 50), B = bandsA(c), M = macdDemaA(c), S = stochA(c);
   return {
     EMA: dirOfBools(ef[i] > es[i] && C > ef[i], ef[i] < es[i] && C < ef[i]),
     BOLLINGER: dirOfBools(C > B.mid[i] && C < B.up[i], C < B.mid[i] && C > B.lo[i]),
     MACD: dirOfBools(M.m[i] > M.s[i], M.m[i] < M.s[i]),
-    STOCHRSI: dirOfBools(stochBuy(S.k[i]), stochSell(S.k[i])),
+    STOCHRSI: (() => { for (let j = i; j > i - look && j >= 0; j--) { if (stochBuy(S.k[j])) return 1; if (stochSell(S.k[j])) return -1; } return 0; })(),
   };
 }
 async function liveAltin(x) {
   const [m15, h1] = await Promise.all([tradfiRows(x.symbol, "15m"), tradfiRows(x.symbol, "1h")]);
-  const a = altinDirs(m15), b = altinDirs(resampleRows(h1, 240, "epoch"));
-  const sum = o => Object.values(o).reduce((p, v) => p + v, 0), n = Object.keys(a).length;
+  const a = altinDirs(m15, x.stoch_lookback || 20), b = altinDirs(resampleRows(h1, 240, "epoch"), x.stoch_lookback || 20);
+  const tr = a.EMA + a.BOLLINGER + a.MACD;
   const indicators = {};
   for (const k of Object.keys(a)) indicators[k] = { "15dk": a[k], "4s": b[k] };
   return { price: m15[m15.length - 1][4], candles: m15.slice(-200).map(r => r.slice(0, 5)), osc: oscRows(m15), indicators,
-           signal: sum(a) === n && sum(b) === n ? 1 : sum(a) === -n && sum(b) === -n ? -1 : 0 };
+           signal: tr === 3 && a.STOCHRSI === 1 ? 1 : tr === -3 && a.STOCHRSI === -1 ? -1 : 0 };
 }
 startPage("sinyal", s => {
   const tfs = ["15dk", "4s"];
@@ -82,8 +85,8 @@ startPage("sinyal", s => {
   const r = $("s-result");
   r.className = "result " + (s.signal === 1 ? "buy" : s.signal === -1 ? "sell" : "neutral");
   r.textContent = s.signal === 1 ? "🟢 AL SİNYALİ" : s.signal === -1 ? "🔴 SAT SİNYALİ"
-    : "⚪ Sinyal yok · 8 kontrolün hepsi aynı yönde değil";
-  $("s-pos").innerHTML = positionHtml(s.position, s.price, s.tp_pips, null, s.pip_size);
+    : "⚪ Sinyal yok · 15dk EMA, Bollinger, MACD DEMA ve StochRSI aynı yönde değil";
+  $("s-pos").innerHTML = positionHtml(s.position, s.price, s.tp_pips, s.sl_pips, s.pip_size);
   $("s-stats").innerHTML = statsHtml(s.stats);
   $("s-hist").innerHTML = historyHtml(s.history);
   renderChart(s, null);

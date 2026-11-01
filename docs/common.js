@@ -24,14 +24,15 @@ async function load(name) {
 
 function positionHtml(pos, price, tp, sl, pip) {
   if (!pos) return '<div class="muted">Açık işlem yok.</div>';
-  const target = pos.entry + pos.dir * tp * pip;
   const live = pos.dir * (price - pos.entry) / pos.entry * 100;
   const pips = pos.dir * (price - pos.entry) / pip;
-  const stop = sl ? `<div><span class="muted small">Zarar durdur</span><b class="red">${fmt(pos.entry - pos.dir * sl * pip)}</b></div>` : "";
+  const stopPx = pos.sl !== undefined ? pos.sl : sl ? pos.entry - pos.dir * sl * pip : null;
+  const stop = stopPx === null ? "" : `<div><span class="muted small">${pos.trail ? "🔒 İz süren stop" : "Zarar durdur"}</span><b class="${pos.trail ? "green" : "red"}">${fmt(stopPx)}</b></div>`;
+  const target = tp ? `<div><span class="muted small">Kâr al</span><b class="green">${fmt(pos.entry + pos.dir * tp * pip)}</b></div>` : "";
   return `<div class="pos">
     <div><span class="muted small">Yön</span><b>${side(pos.dir)}</b></div>
     <div><span class="muted small">Giriş · ${dt(Date.parse(pos.time) / 1000)}</span><b>${fmt(pos.entry)}</b></div>
-    <div><span class="muted small">Kâr al</span><b class="green">${fmt(target)}</b></div>
+    ${target}
     ${stop}
     <div><span class="muted small">Anlık kâr/zarar</span><b class="${live >= 0 ? "green" : "red"}">${pct(live)} (${fmt(pips, 1)} pip)</b></div>
   </div>`;
@@ -95,8 +96,9 @@ function renderChart(x, sl) {
   if (pos) {
     const add = (price, color, title) => priceLines.push(series.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, title }));
     add(pos.entry, "#f5c542", "Giriş");
-    add(pos.entry + pos.dir * x.tp_pips * x.pip_size, "#22c55e", "Kâr al");
-    if (sl) add(pos.entry - pos.dir * sl * x.pip_size, "#ef4444", "Zarar durdur");
+    if (x.tp_pips) add(pos.entry + pos.dir * x.tp_pips * x.pip_size, "#22c55e", "Kâr al");
+    if (pos.sl !== undefined) add(pos.sl, pos.trail ? "#22c55e" : "#ef4444", pos.trail ? "İz süren stop" : "Zarar durdur");
+    else if (sl) add(pos.entry - pos.dir * sl * x.pip_size, "#ef4444", "Zarar durdur");
   }
 }
 

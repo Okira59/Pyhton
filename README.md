@@ -3,17 +3,18 @@
 15 dakikalık ve 4 saatlik grafiklerde **Bollinger Bantları, EMA, MACD ve StochRSI** göstergelerini izler.
 8 kontrolün (4 gösterge × 2 zaman dilimi) **hepsi aynı yönü** gösterdiğinde sinyal üretir.
 
-| Gösterge | AL (yükseliş) koşulu | SAT (düşüş) koşulu |
+| Gösterge (15dk) | AL (yükseliş) koşulu | SAT (düşüş) koşulu |
 |---|---|---|
 | EMA (20/50) | EMA20 > EMA50 ve fiyat > EMA20 | EMA20 < EMA50 ve fiyat < EMA20 |
 | Bollinger (20, 2) | Fiyat orta bandın üstünde, üst bandın altında | Fiyat orta bandın altında, alt bandın üstünde |
-| MACD (12/26/9) | MACD > sinyal çizgisi | MACD < sinyal çizgisi |
-| StochRSI (14/14/3/3) | %K > %D ve %K < 80 | %K < %D ve %K > 20 |
+| MACD DEMA (12/26/9) | MACD > sinyal çizgisi | MACD < sinyal çizgisi |
+| StochRSI (14/14/3/3) | %K son `STOCH_LOOKBACK` (20) mumda tam 0,00'a değdi | %K son 20 mumda tam 100,00'e değdi |
 
-**Kâr al (KAPAT) sinyali:** Bir AL/SAT sinyalinden sonra fiyat giriş fiyatından `TP_PIPS` (varsayılan 20) pip kâra ulaşınca
-"İŞLEMİ KAPAT" bildirimi gönderilir. Altında 1 pip = `PIP_SIZE` = 1 $ kabul edilir (20 pip = 20 $).
-Değiştirmek için `bot.py` içindeki ayarları ya da `TP_PIPS` / `PIP_SIZE` ortam değişkenlerini kullanın.
-Yeni bir sinyal gelirse açık işlemin yerini alır.
+Dört koşul 15dk'da aynı yönde olunca sinyal oluşur; 4s göstergeler bilgi amaçlı gösterilir.
+
+**Çıkış:** Sabit kâr al yok. Zarar durdur `SL_PIPS` (15) pip; kâr `TRAIL_START` (20) pip olunca iz süren stop
+devreye girer ve zirve kârın `TRAIL_GAP` (10) pip gerisinden takip eder. Ters yönde sinyal gelirse işlem kapanır ve
+ters yönde yeni işlem açılır. Altında 1 pip = `PIP_SIZE` = 1 $ kabul edilir.
 
 Yalnızca **kapanmış mumlar** kullanılır (repaint yok). Parametreler `bot.py` başındaki AYARLAR bölümünden değiştirilebilir.
 
