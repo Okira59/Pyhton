@@ -379,13 +379,13 @@ function renderKupon() {
   const all = (KUPON.coupons || []).filter((c) => c.legs && c.legs.length);
   const now = Date.now() / 1000;
   const active = all.filter((c) => c.status === "bekliyor" && Math.max(...c.legs.map((l) => l.ts)) + 2.5 * 3600 > now);
-  const done = all.filter((c) => c.status === "kazandı" || c.status === "kaybetti");
+  const done = all.filter((c) => c.status === "kazandı");
   let h = `<p class="note">Her gün 09:00'dan sonra o günün <b>iddaa maçlarından</b> 13 kupon hazırlanır: İY/MS, İY 1.5 / 2.5 Üst, 3.5 / 4.5 / 5.5 Üst, Maç sonucu (MS) ve yüksek oranlıdan 2'şer adet (2-5 maçlık),
     İY + 2. yarı skorundan 4'lü, 5'li ve 6'lı birer kupon (sadece iddaa'da skor bahsi açık maçlar). Kuponlarda toplam oranı <b>3.50'nin altında kupon yoktur</b> (yüksek oranlıda en az 10). Bu şartı sağlayan kombinasyonlar arasından tutma olasılığı en yüksek olan seçilir.
     Oranlar iddaa'dan; iddaa'da olmayan market (çoğunlukla İY/MS) için aynı maçın Bet365 / William Hill oranı kullanılır (tabloda belirtilir).
     Olasılık: oranın ima ettiği olasılık, son 3 ayda aynı oran seviyesindeki maçların gerçek sonuçlarına göre düzeltilir. Son güncelleme: ${fmtT(KUPON.updated)}</p>`;
-  const sum = (kind) => { const d = done.filter((c) => c.kind === kind); const w = d.filter((c) => c.status === "kazandı"); const ret = w.reduce((s, c) => s + c.odd, 0);
-    return `<div class="card"><div class="t">${KIND[kind]} (sonuçlanan)</div><div class="v">${w.length} / ${d.length}</div><div class="s">${d.length ? `tutma %${f1((100 * w.length) / d.length)}${kind === "skor" ? "" : ` · 1 birim başına getiri ${(ret / d.length).toFixed(2)}`}` : "henüz sonuçlanan yok"}</div></div>`; };
+  const sum = (kind) => { const w = done.filter((c) => c.kind === kind);
+    return `<div class="card"><div class="t">${KIND[kind]}</div><div class="v">${w.length}</div><div class="s">${w.length ? "tutan kupon" : "henüz tutan kupon yok"}</div></div>`; };
   h += `<div class="cards">${ORDER.map(sum).join("")}</div>`;
   if (!active.length) h += `<p class="note">Şu an bekleyen kupon yok. Günün kuponları 09:00'dan sonraki ilk güncellemede hazırlanır.</p>`;
   const normal = active.filter((c) => c.kind !== "skor");
@@ -409,8 +409,8 @@ function renderKupon() {
     }
     h += `</table></div>`;
   }
-  const past = all.filter((c) => !active.includes(c)).sort((a, b) => b.created - a.created).slice(0, 40);
-  if (past.length) { h += `<h2>Geçmiş kuponlar (son 40)</h2>`; past.forEach((c) => (h += couponCard(c, false))); }
+  const past = done.sort((a, b) => b.created - a.created).slice(0, 40);
+  if (past.length) { h += `<h2>Tutan kuponlar (son 40)</h2>`; past.forEach((c) => (h += couponCard(c, false))); }
   h += `<p class="note">Uyarı: Geçmiş testte (son 45 gün) model olasılıkları gerçekleşenle uyumluydu ama kuponların uzun vadede kâr ettiği görülmedi. Bahis şirketinin marjı nedeniyle kâr garantisi yoktur.</p>`;
   el.innerHTML = h;
 }
