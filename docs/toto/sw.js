@@ -1,4 +1,4 @@
-const C = "toto-v1", A = ["./", "index.html", "icon.svg", "manifest.webmanifest"];
+const C = "toto-v2", A = ["./", "index.html", "icon.svg", "manifest.webmanifest"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(C).then(c => c.addAll(A))); self.skipWaiting(); });
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", e => {

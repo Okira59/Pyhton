@@ -315,8 +315,14 @@ def missing(m):
         for p in js["data"]["findEventById"]["eventParticipants"]:
             side = "h" if p["type"]["side"] == "HOME" else "a"
             lu = p["lineup"] or {}
-            out[side] = [{"n": x["player"]["name"], "r": x["reason"]} for x in lu.get("missingPlayers") or []] + \
-                        [{"n": x["player"]["name"], "r": x["reason"], "s": 1} for x in lu.get("unsureMissingPlayers") or []]
+            imp = {x["id"]: x["importance"] for x in ((lu.get("playerImportance") or {}).get("importances") or [])}
+            out[side] = [{"id": x["player"].get("participantId"), "n": x["player"]["name"], "r": x["reason"]} for x in lu.get("missingPlayers") or []] + \
+                        [{"id": x["player"].get("participantId"), "n": x["player"]["name"], "r": x["reason"], "s": 1} for x in lu.get("unsureMissingPlayers") or []]
+            seen = set()
+            out[side] = [x for x in out[side] if not (x["id"] in seen or seen.add(x["id"]))]
+            for x in out[side]:
+                if x["id"] in imp:
+                    x["onem"] = imp[x["id"]]
     except (KeyError, TypeError):
         return None
     return out
@@ -398,7 +404,10 @@ def notes(e):
         lst = mp.get(side) or []
         kesin = [x for x in lst if not x.get("s")]
         ceza = [x for x in kesin if re.search(r"card|suspen|red", x["r"], re.I)]
-        if len(kesin) >= 4:
+        kilit = [x["n"] for x in kesin if x.get("seviye") == "Kilit oyuncu"]
+        if kilit:
+            out.append(f"{nm}: {len(kilit)} kilit oyuncu yok ({', '.join(kilit[:4])})")
+        elif len(kesin) >= 4:
             out.append(f"{nm}: {len(kesin)} eksik oyuncu")
         if ceza:
             out.append(f"{nm}: {len(ceza)} cezalı")
@@ -444,6 +453,8 @@ def analyse(prog):
         if inf.get("sehir"):
             e["hava"] = weather(geocode(inf["sehir"], geo), e["ts"])
     save(GEO, geo)
+    squad_stats(hasfs)
+    previews(ev)
     rows = []
     for e in ev:
         srcs = {k: v["o"] for k, v in (e.get("oran") or {}).items()}
@@ -462,10 +473,191 @@ def analyse(prog):
         r = {"no": e["eventNo"], "ev": h, "dep": a, "lig": e["competitionName"], "ts": e["ts"], "p": [round(x, 4) for x in p],
              "piyasa": [round(x, 4) for x in base] if base else None, "halk": halk, "oran": e.get("oran") or {},
              "eksik": e.get("eksik"), "bilgi": e.get("bilgi"), "hava": e.get("hava"), "form": e.get("form"), "skor": e.get("skor"),
-             "fs": (e.get("fs") or {}).get("id"), "sonuc": e.get("result"), "kazanan": e.get("winner")}
+             "fs": (e.get("fs") or {}).get("id"), "yorum": e.get("yorum"), "sonuc": e.get("result"), "kazanan": e.get("winner")}
         r["notlar"] = notes(r)
         rows.append(r)
     return rows
+
+
+# ---------------------------------------------------------------- kadro istatistikleri
+KADRO = os.path.join(BASE, "data", "kadro.json")
+YORUM = os.path.join(BASE, "data", "yorum.json")
+
+
+def recs(text):
+    for rec in text.split("¬~"):
+        f = {}
+        for kv in rec.split("¬"):
+            if "÷" in kv:
+                k, v = kv.split("÷", 1)
+                f.setdefault(k, v)
+        yield f
+
+
+def team_matches(m, ts):
+    """Her iki takımın bu sezon oynadığı resmi maçlar: {"h": [(eventId, "1"/"2")], "a": [...]}."""
+    r = F.get(F.FEED + f"df_hh_1_{m['id']}", F.FEED_HDR)
+    out = {"h": [], "a": []}
+    if not r:
+        return out
+    d = datetime.fromtimestamp(ts, TR)
+    start = datetime(d.year if d.month >= 7 else d.year - 1, 7, 1, tzinfo=TR).timestamp()
+    tab = sec = None
+    nlast = 0
+    for f in recs(r.text):
+        if "KA" in f:
+            tab = f["KA"]
+        if "KB" in f:
+            sec = None
+            if tab == "Overall" and f["KB"].startswith("Last matches"):
+                sec = "ha"[nlast] if nlast < 2 else None
+                nlast += 1
+        if "KC" in f and sec and f.get("KP") and f["KP"] != m["id"]:
+            t = int(f["KC"])
+            if start <= t < ts - 3600 and "Friendly" not in f.get("KF", "") and len(out[sec]) < 30:
+                out[sec].append((f["KP"], "1" if f.get("KS") == "home" else "2"))
+    return out
+
+
+def lineup(eid):
+    """Maçta oynayan oyuncular: {"1": [[id, ilk11 mi, puan]], "2": [...]}."""
+    r = F.get(F.FEED + f"df_li_1_{eid}", F.FEED_HDR)
+    if not r or "LP÷" not in r.text:
+        return None
+    out = {"1": [], "2": []}
+    grp = side = None
+    for f in recs(r.text):
+        if "LB" in f:
+            grp = f["LB"]
+        if "LC" in f:
+            side = f["LC"]
+        if "LP" in f and side in out and grp in ("Starting Lineups", "Substitutes"):
+            st = grp == "Starting Lineups"
+            rt = F.fnum(f.get("LPR"))
+            if st or rt:
+                out[side].append([f["LP"], 1 if st else 0, rt])
+    return out if out["1"] or out["2"] else None
+
+
+def squad_stats(ev):
+    """Eksik oyuncular için: takımın bu sezonki maçlarında kaç maç oynadı, kaçında ilk 11, ortalama puan."""
+    cache = load(KADRO, {})
+    tm = {}
+    with ThreadPoolExecutor(6) as ex:
+        for e, t in zip(ev, ex.map(lambda e: team_matches(e["fs"], e["ts"]), ev)):
+            tm[e["eventNo"]] = t
+    need = {eid for t in tm.values() for lst in t.values() for eid, _ in lst if eid not in cache}
+    with ThreadPoolExecutor(8) as ex:
+        for eid, lu in zip(need, ex.map(lineup, need)):
+            cache[eid] = lu
+    used = {eid for t in tm.values() for lst in t.values() for eid, _ in lst}
+    save(KADRO, {k: v for k, v in cache.items() if k in used})
+    for e in ev:
+        mp = e.get("eksik") or {}
+        for side in ("h", "a"):
+            games = [(cache.get(eid) or {}).get(sd) for eid, sd in tm[e["eventNo"]][side]]
+            games = [g for g in games if g]
+            if not games or not mp.get(side):
+                continue
+            for p in mp[side]:
+                rows = [x for g in games for x in g if x[0] == p.get("id")]
+                rts = [x[2] for x in rows if x[2]]
+                p.update({"mac": len(games), "oyn": len(rows), "ilk11": sum(x[1] for x in rows),
+                          "puan": round(sum(rts) / len(rts), 2) if rts else None})
+                rate = p["ilk11"] / len(games)
+                p["seviye"] = "Bu sezon oynamadı" if not p["oyn"] else "Kilit oyuncu" if rate >= 0.7 else "Önemli" if rate >= 0.4 else "Rotasyon" if p["oyn"] / len(games) >= 0.25 else "Az oynuyor"
+            mp[side].sort(key=lambda p: (-p.get("ilk11", 0), -p.get("oyn", 0)))
+
+
+# ---------------------------------------------------------------- yorumcular (Sports Mole) + Türkçe çeviri
+SM = "https://www.sportsmole.co.uk"
+
+
+def _gtx(text):
+    r = S.post("https://translate.google.com/translate_a/single", params={"client": "gtx", "sl": "en", "tl": "tr", "dt": "t"},
+               data={"q": text}, headers=UA, timeout=25)
+    return "".join(x[0] for x in r.json()[0] if x[0])
+
+
+def _chrome(text):
+    r = S.post("https://clients5.google.com/translate_a/t", params={"client": "dict-chrome-ex", "sl": "en", "tl": "tr"},
+               data={"q": text}, headers=UA, timeout=25)
+    x = r.json()[0]
+    return x if isinstance(x, str) else x[0]
+
+
+def translate(text):
+    """İngilizce -> Türkçe (Google; olmazsa yedek uç). Başarısızsa None."""
+    for fn in (_gtx, _chrome):
+        for i in range(2):
+            try:
+                out = fn(text)
+                if out:
+                    return out
+            except (requests.RequestException, ValueError, TypeError, IndexError, KeyError):
+                pass
+            time.sleep(2 + 3 * i)
+    return None
+
+
+def sm_article(url):
+    import html as H
+    try:
+        t = S.get(url, headers=UA, timeout=25).text
+    except requests.RequestException:
+        return None
+    yazar = re.search(r'"author"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"', t)
+    tarih = re.search(r'datePublished"\s*:\s*"([^"]+)', t)
+    secs, cur = {}, None
+    for tag, body in re.findall(r"<(h2|p)[^>]*>(.*?)</\1>", t, re.S):
+        txt = H.unescape(re.sub(r"<[^>]+>", "", body)).replace("\xa0", " ").strip()
+        if tag == "h2":
+            cur = "onizleme" if txt.startswith("Match preview") else "kadro" if txt.startswith("Team News") else \
+                  "tahmin" if txt.startswith("We say") else None
+            if cur == "tahmin":
+                secs["skor"] = txt.replace("We say:", "").strip()
+            continue
+        if cur and len(txt) > 30:
+            secs.setdefault(cur, []).append(txt)
+    if not secs.get("onizleme"):
+        return None
+    kadro = [p for p in secs.get("kadro", []) if not re.fullmatch(r"[^.]*;[^.]*", p)]  # tahmini 11'ler hariç
+    return {"kaynak": "Sports Mole", "url": url, "yazar": yazar.group(1) if yazar else None, "tarih": tarih.group(1) if tarih else None,
+            "skor": secs.get("skor"), "en": {"onizleme": secs["onizleme"][:4], "kadro": kadro[:4], "tahmin": secs.get("tahmin", [])[:2]}}
+
+
+def previews(ev):
+    cache = load(YORUM, {})
+    try:
+        t = S.get(f"{SM}/football/preview/", headers=UA, timeout=25).text
+        links = sorted(set(re.findall(r'href="(/football/[^"]+/preview/([a-z0-9-]+)-vs-([a-z0-9-]+)-prediction[^"]*\.html)"', t)))
+    except requests.RequestException:
+        links = []
+    for e in ev:
+        h, a = map(tr2en, split_name(e["eventName"]))
+        best, bs = None, 0
+        for url, x, y in links:
+            sc = _sim(h, x.replace("-", " ")) + _sim(a, y.replace("-", " "))
+            if sc > bs:
+                best, bs = url, sc
+        key = str(e["eventNo"]) + "|" + e["eventName"]
+        if best and bs >= 1.2 and (cache.get(key) or {}).get("url") != SM + best:
+            art = sm_article(SM + best)
+            if art:
+                tr = {}
+                for k, ps in art["en"].items():
+                    x = translate("\n".join(ps)) if ps else ""
+                    if x is None:
+                        tr = None
+                        break
+                    tr[k] = [p for p in x.split("\n") if p.strip()]
+                if tr is not None:
+                    skor = translate(art["skor"]) if art["skor"] else None
+                    cache[key] = {k: v for k, v in art.items() if k != "en"} | {"tr": tr, "skor_tr": skor}
+        if key in cache:
+            e["yorum"] = [cache[key]]
+    names = {str(e["eventNo"]) + "|" + e["eventName"] for e in ev}
+    save(YORUM, {k: v for k, v in cache.items() if k in names})
 
 
 # ---------------------------------------------------------------- sonuçlar / geçmiş
@@ -499,21 +691,17 @@ def main():
         print("Spor Toto programı alınamadı")
         return
     cyc = prog["gameCycleNo"]
-    # önceki hafta tamamlanmadıysa sonuçlarını güncelle
+    # yeni hafta çıktıysa eski haftayı geçmişe taşı; sonuçları bekleyen haftaları güncelle
     if cur and cur["hafta"] != cyc:
-        res = (jget(f"{TOTO}/SporToto/result", {"gameCycleNo": cur["hafta"]}) or {}).get("data")
-        if res:
-            apply_results(cur, res)
-        if all(r.get("kazanan") in OUTC for r in cur["maclar"]) or now - ts_of(cur["bitis"]) > 6 * 86400:
-            hist["haftalar"] = [h for h in hist["haftalar"] if h["hafta"] != cur["hafta"]] + [cur]
-            hist["haftalar"] = hist["haftalar"][-52:]
-            save(HIST, hist)
-            cur = None
-        else:
-            save(OUT, cur)
-            save(STATE, state)
-            print(f"{cur['hafta']}. hafta sonuçları bekleniyor")
-            return
+        hist["haftalar"] = [h for h in hist["haftalar"] if h["hafta"] != cur["hafta"]] + [cur]
+        cur = None
+    for h in hist["haftalar"][-4:]:
+        if not all(r.get("kazanan") in OUTC for r in h["maclar"]) and now - ts_of(h["bitis"]) < 10 * 86400:
+            res = (jget(f"{TOTO}/SporToto/result", {"gameCycleNo": h["hafta"]}) or {}).get("data")
+            if res:
+                apply_results(h, res)
+    hist["haftalar"] = hist["haftalar"][-52:]
+    save(HIST, hist)
     deadline = ts_of(prog["payinEndDate"])
     locked = now > deadline
     if cur and cur["hafta"] == cyc and locked:

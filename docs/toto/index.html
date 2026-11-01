@@ -31,7 +31,16 @@ let D,H,B,V="mac";
 async function j(u){try{const r=await fetch(u+"?t="+Date.now());return r.ok?r.json():null}catch(e){return null}}
 function bar(p,w){const b=p.indexOf(Math.max(...p));return `<div class="bar">${p.map((x,i)=>`<div class="b${O[i]} ${w!=null?(O[i]==w?"pick":""):(i==b?"pick":"")}" style="width:${x*100}%">${x<0.13?Math.round(x*100):O[i]+" "+pc(x)}</div>`).join("")}</div>`}
 function form(l){return (l||[]).map(x=>`<span class="f f${({w:"w",d:"d",l:"l"})[x.r]||"d"}" title="${x.ev} ${x.s} ${x.dep}">${({w:"G",d:"B",l:"M"})[x.r]||"?"}</span>`).join("")}
-function eksik(l){if(!l||!l.length)return "<i class=mut>yok</i>";return "<ul>"+l.map(x=>`<li>${x.n} <span class=mut>(${x.s?"şüpheli: ":""}${x.r})</span></li>`).join("")+"</ul>"}
+function esc(t){return String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c])}
+function eksik(l){if(!l||!l.length)return "<i class=mut>yok</i>";return "<ul>"+l.map(x=>{const st=x.mac?`${x.seviye?`<b>${x.seviye}</b> · `:""}bu sezon takımın ${x.mac} resmi maçı: ${x.oyn} maçta oynadı, ${x.ilk11} maçta ilk 11${x.puan?` · ort. puan ${x.puan}`:""}`:"sezon istatistiği bulunamadı";return `<li>${esc(x.n)} <span class=mut>(${x.s?"şüpheli: ":""}${esc(x.r)})</span><br><span class=mut style="font-size:12px">${st}${x.onem!=null?` · Flashscore önem puanı ${x.onem}`:""}</span></li>`}).join("")+"</ul>"}
+function yorum(l){if(!l||!l.length)return `<div style="margin-top:8px"><b>Yorumcular</b>: <span class=mut>Henüz yorum bulunamadı (önizlemeler genelde maça 1-2 gün kala yayınlanır).</span></div>`;
+return l.map(y=>`<div style="margin-top:8px"><b>Yorumcu görüşü</b> <span class=mut>— ${esc(y.kaynak)}${y.yazar?", "+esc(y.yazar):""}${y.tarih?", "+new Date(y.tarih).toLocaleDateString("tr-TR"):""}</span>
+${y.skor_tr||y.skor?`<div class="tag">Skor tahmini: ${esc(y.skor_tr||y.skor)}</div>`:""}
+<details><summary>Türkçe yorumu oku</summary>
+${(y.tr.onizleme||[]).map(p=>`<p>${esc(p)}</p>`).join("")}
+${(y.tr.kadro||[]).length?`<p><b>Takım haberleri</b></p>`+y.tr.kadro.map(p=>`<p>${esc(p)}</p>`).join(""):""}
+${(y.tr.tahmin||[]).length?`<p><b>Değerlendirme</b></p>`+y.tr.tahmin.map(p=>`<p>${esc(p)}</p>`).join(""):""}
+<p class=mut>Otomatik çeviri. <a href="${esc(y.url)}" target="_blank" rel="noopener">Orijinal yazı (İngilizce)</a></p></details></div>`).join("")}
 function mac(r){const o=r.oran||{},rows=[["Bet365","bet365"],["William Hill","williamhill"],["iddaa","iddaa"],["Diğer siteler ort.","diger"]].filter(x=>o[x[1]]);
 const w=r.hava,f=r.form,e=r.eksik||{},sk=r.skor;
 return `<div class="card"><div class="row"><span class="no">${r.no}</span><div style="flex:1"><div class="t">${r.ev} – ${r.dep}</div><div class="mut">${r.lig} · ${dt(r.ts)}${r.bilgi&&r.bilgi.stad?" · "+r.bilgi.stad:""}</div></div>${r.kazanan!=null?`<span class="big ${r.kazanan==O[r.p.indexOf(Math.max(...r.p))]?"g":"r"}">${r.sonuc||""} <small>(${r.kazanan})</small></span>`:""}</div>
@@ -42,6 +51,7 @@ ${r.piyasa?`<tr><td>Piyasa olasılığı</td>${r.piyasa.map(x=>`<td>${pc(x)}</td
 ${r.halk&&r.halk[0]!=null?`<tr><td>Halkın tercihi</td>${r.halk.map(x=>`<td>%${x}</td>`).join("")}</tr>`:""}</table>
 ${f?`<div style="margin-top:8px"><b>Form (son 5)</b><div>${r.ev}: ${form(f.h)}</div><div>${r.dep}: ${form(f.a)}</div>${f.h2h&&f.h2h.length?`<div class=mut style="margin-top:4px">Aralarındaki son maçlar: ${f.h2h.map(x=>`${x.ev} ${x.s} ${x.dep}`).join(" · ")}</div>`:""}</div>`:""}
 <div style="margin-top:8px"><b>Eksik oyuncular</b> <span class=mut>(sakat / cezalı / şüpheli)</span><div>${r.ev}: ${eksik(e.h)}</div><div>${r.dep}: ${eksik(e.a)}</div>${r.eksik?"":"<div class=mut>Liste henüz yayınlanmadı (genelde maça 1-3 gün kala dolar)</div>"}</div>
+${yorum(r.yorum)}
 <div style="margin-top:8px"><b>Hava</b>: ${w?`${w.durum}, ${Math.round(w.t)}°C, yağış ${w.yagis} mm (olasılık %${w.yagis_ol??"-"}), rüzgar ${Math.round(w.ruzgar)} km/s`+(r.bilgi&&r.bilgi.sehir?` <span class=mut>(${r.bilgi.sehir})</span>`:""):"<span class=mut>tahmin yok (maça 15 günden fazla var ya da şehir bulunamadı)</span>"}</div>
 ${sk&&sk.length?`<div style="margin-top:8px"><b>Olası skorlar</b>: ${sk.map(x=>`${x[0]} <span class=mut>${pc(x[1])}</span>`).join(" · ")}</div>`:""}
 </details></div>`}
@@ -56,6 +66,8 @@ if(V=="gecmis")a.innerHTML=(H&&H.haftalar.length?H.haftalar.slice().reverse().ma
 if(V=="bilgi")a.innerHTML=`<div class="card"><b>Nasıl çalışır?</b><ul>
 <li>Program her hafta iddaa Spor Toto servisinden otomatik çekilir; son oynama saatine kadar 3 saatte bir güncellenir.</li>
 <li>Oranlar: Bet365, William Hill (Flashscore üzerinden) ve iddaa. Marjları arındırılıp ortalaması alınır.</li>
+<li>Eksik oyuncular: her oyuncunun bu sezon takımının resmi maçlarında kaç maç oynadığı, kaçında ilk 11 başladığı ve ortalama puanı Flashscore kadrolarından sayılır. İlk 11 oranı %70+ ise "Kilit oyuncu", %40+ ise "Önemli" yazar.</li>
+<li>Yorumcular: Sports Mole maç önizlemeleri (yazar, tarih, skor tahmini, takım haberleri) otomatik Türkçeye çevrilir. Yorumlar olasılık hesabını değiştirmez, bilgi içindir.</li>
 <li>Geçmiş ${B?B.hafta:51} Spor Toto haftasında (${B?B.mac:734} maç) test edildi: kapanış oranları en iyi tahminci; favoriyi hafif güçlendirip beraberliği hafif artıran bir düzeltme doğruluğu artırdı ve modele eklendi.</li>
 <li>Sakat/cezalı oyuncu ve hava durumunu olasılığa eklemek testte tahmini <b>kötüleştirdi</b> (oranlar bu bilgiyi zaten içeriyor). Bu yüzden bunlar ⚠️ uyarı olarak gösterilir, karar senin.</li>
 <li>Oranı olmayan maçlarda halkın tercih yüzdesi kullanılır (daha az güvenilir).</li>
