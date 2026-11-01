@@ -381,24 +381,18 @@ function renderKupon() {
   const active = all.filter((c) => c.status === "bekliyor" && Math.max(...c.legs.map((l) => l.ts)) + 2.5 * 3600 > now);
   const done = all.filter((c) => c.status === "kazandı");
   let h = `<p class="note">Her gün 09:00'dan sonra o günün <b>iddaa maçlarından</b> 13 kupon hazırlanır: İY/MS, İY 1.5 / 2.5 Üst, 3.5 / 4.5 / 5.5 Üst, Maç sonucu (MS) ve yüksek oranlıdan 2'şer adet (2-5 maçlık),
-    İY + 2. yarı skorundan 4'lü, 5'li ve 6'lı birer kupon (sadece iddaa'da skor bahsi açık maçlar). Kuponlarda toplam oranı <b>3.50'nin altında kupon yoktur</b> (yüksek oranlıda en az 10). Bu şartı sağlayan kombinasyonlar arasından tutma olasılığı en yüksek olan seçilir.
+    İY + 2. yarı skorundan 4'lü, 5'li ve 6'lı birer kupon (sadece iddaa'da skor bahsi açık maçlar). Kuponlarda toplam oranı <b>5.50'nin altında kupon yoktur</b> (yüksek oranlıda en az 10). Bu şartı sağlayan kombinasyonlar arasından tutma olasılığı en yüksek olan seçilir.
     Oranlar iddaa'dan; iddaa'da olmayan market (çoğunlukla İY/MS) için aynı maçın Bet365 / William Hill oranı kullanılır (tabloda belirtilir).
     Olasılık: oranın ima ettiği olasılık, son 3 ayda aynı oran seviyesindeki maçların gerçek sonuçlarına göre düzeltilir. Son güncelleme: ${fmtT(KUPON.updated)}</p>`;
   const sum = (kind) => { const w = done.filter((c) => c.kind === kind);
     return `<div class="card"><div class="t">${KIND[kind]}</div><div class="v">${w.length}</div><div class="s">${w.length ? "tutan kupon" : "henüz tutan kupon yok"}</div></div>`; };
   h += `<div class="cards">${ORDER.map(sum).join("")}</div>`;
   if (!active.length) h += `<p class="note">Şu an bekleyen kupon yok. Günün kuponları 09:00'dan sonraki ilk güncellemede hazırlanır.</p>`;
-  const normal = active.filter((c) => c.kind !== "skor");
-  const bestP = normal.reduce((m, c) => (!m || c.p > m.p ? c : m), null);
-  const bestO = normal.filter((c) => c !== bestP).reduce((m, c) => (!m || c.odd > m.odd ? c : m), null);
-  if (bestP) h += `<h2>Tutma olasılığı en yüksek kupon</h2>` + couponCard(bestP, true);
-  if (bestO) h += `<h2>En yüksek oranlı kupon</h2>` + couponCard(bestO, false);
-  for (const k of [...ORDER, ...Object.keys(KIND).filter((x) => !ORDER.includes(x))]) {
-    const cs = active.filter((c) => c.kind === k && c !== bestP && c !== bestO).sort((a, b) => b.p - a.p);
-    if (!cs.length) continue;
-    h += `<h2>${KIND[k]} kuponları</h2>`;
-    if (k === "skor") h += `<p class="note">Sadece iddaa'da <b>"1. Yarı/Maç Sonucu Skorları"</b> bahsi açık maçlar kullanılır. Her maç için en olası İY skoru + 2. yarı skoru seçilir; iddaa'da oynanacak seçenek İY skoru / MS skorudur (MS = İY + 2. yarı). Oranlar iddaa oranıdır.</p>`;
-    cs.forEach((c) => (h += couponCard(c, false)));
+  const ready = active.slice().sort((a, b) => b.p - a.p);
+  if (ready.length) {
+    h += `<h2>Hazır kuponlar <span class="note">(tutma olasılığı en yüksekten düşüğe)</span></h2>`;
+    if (ready.some((c) => c.kind === "skor")) h += `<p class="note">Skor kuponlarında sadece iddaa'da <b>"1. Yarı/Maç Sonucu Skorları"</b> bahsi açık maçlar kullanılır. Her maç için en olası İY skoru + 2. yarı skoru seçilir; iddaa'da oynanacak seçenek İY skoru / MS skorudur (MS = İY + 2. yarı). Oranlar iddaa oranıdır.</p>`;
+    ready.forEach((c, i) => (h += couponCard(c, i === 0)));
   }
   const top = KUPON.iyms_top || {};
   if (Object.keys(top).length) {
@@ -409,8 +403,8 @@ function renderKupon() {
     }
     h += `</table></div>`;
   }
-  const past = done.sort((a, b) => b.created - a.created).slice(0, 40);
-  if (past.length) { h += `<h2>Tutan kuponlar (son 40)</h2>`; past.forEach((c) => (h += couponCard(c, false))); }
+  const past = done.sort((a, b) => b.odd - a.odd).slice(0, 40);
+  if (past.length) { h += `<h2>Tutan kuponlar <span class="note">(en yüksek orandan düşüğe)</span></h2>`; past.forEach((c) => (h += couponCard(c, false))); }
   h += `<p class="note">Uyarı: Geçmiş testte (son 45 gün) model olasılıkları gerçekleşenle uyumluydu ama kuponların uzun vadede kâr ettiği görülmedi. Bahis şirketinin marjı nedeniyle kâr garantisi yoktur.</p>`;
   el.innerHTML = h;
 }
