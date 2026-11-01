@@ -12,7 +12,7 @@
 
 Dört koşul 15dk'da aynı yönde olunca sinyal oluşur; 4s göstergeler bilgi amaçlı gösterilir.
 
-**Çıkış:** Sabit kâr al yok. Zarar durdur `SL_PIPS` (15) pip; kâr `TRAIL_START` (20) pip olunca iz süren stop
+**Çıkış:** Sabit kâr al yok. Zarar durdur `SL_PIPS` (25) pip; kâr `TRAIL_START` (20) pip olunca iz süren stop
 devreye girer ve zirve kârın `TRAIL_GAP` (10) pip gerisinden takip eder. Ters yönde sinyal gelirse işlem kapanır ve
 ters yönde yeni işlem açılır. Altında 1 pip = `PIP_SIZE` = 1 $ kabul edilir.
 
