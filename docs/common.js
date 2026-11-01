@@ -59,7 +59,7 @@ function historyHtml(history) {
 
 function setHeader(x) {
   $("price").textContent = "$" + fmt(x.price);
-  $("candle").textContent = "son kapanan 15dk mum: " + dt(x.close_time);
+  $("candle").textContent = x.live ? "canlı · " + new Date().toLocaleTimeString("tr-TR") : "son kapanan 15dk mum: " + dt(x.close_time);
   const upd = new Date(Date.parse(x.updated));
   $("updated").textContent = upd.toLocaleString("tr-TR") + ` (${Math.round((Date.now() - upd) / 60000)} dk önce)`;
   $("source").textContent = `${x.source || "Bitget"} ${x.symbol}`;
@@ -100,20 +100,29 @@ function renderChart(x, sl) {
   }
 }
 
-function startPage(name, render) {
+// liveFn verilirse fiyat, grafik ve göstergeler LIVE_MS'de bir tarayıcıda canlı hesaplanır
+const LIVE_MS = 10000;
+function startPage(name, render, liveFn) {
+  let x = null, liveData = null;
+  const show = () => { setHeader(x); render(x); };
   async function refresh() {
     try {
-      const x = await load(name);
-      setHeader(x);
-      render(x);
+      x = Object.assign(await load(name), liveData || {});
+      show();
       $("error").style.display = "none";
     } catch (e) {
       $("error").textContent = "Veri alınamadı: " + e.message + " — bir sonraki denemede tekrar denenecek.";
       $("error").style.display = "block";
     }
   }
-  refresh();
+  async function live() {
+    if (!x) return;
+    try { liveData = Object.assign(await liveFn(x), { live: true }); Object.assign(x, liveData); show(); }
+    catch (e) { console.warn("canlı veri alınamadı", e); }
+  }
+  refresh().then(() => liveFn && live());
   setInterval(refresh, 60000);
+  if (liveFn) setInterval(live, LIVE_MS);
 }
 
 const chartOpts = extra => Object.assign({
@@ -124,7 +133,7 @@ const chartOpts = extra => Object.assign({
   rightPriceScale: { borderColor: "#262c38", minimumWidth: 70 },
 }, extra);
 
-// Fiyat grafiğinin altında StochRSI ve MACD panelleri (zaman ekseni fiyat grafiğiyle senkron)
+// Fiyat grafiğinin altında StochRSI ve MACD DEMA panelleri (zaman ekseni fiyat grafiğiyle senkron)
 function renderOsc(rows) {
   if (!osc) {
     chart.applyOptions({ rightPriceScale: { minimumWidth: 70 } });
@@ -134,7 +143,7 @@ function renderOsc(rows) {
     osc = { st, mc, k: line(st, "#3b82f6"), d: line(st, "#f59e0b"),
             hist: mc.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false }),
             m: line(mc, "#3b82f6"), s: line(mc, "#f59e0b") };
-    for (const [v, c] of [[80, "#ef4444"], [20, "#22c55e"]])
+    for (const [v, c] of [[100, "#ef4444"], [0, "#22c55e"]])
       osc.k.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
     osc.k.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) });
     const charts = [chart, st, mc];
@@ -153,4 +162,73 @@ function renderOsc(rows) {
   osc.s.setData(pts(2));
   osc.hist.setData(rows.map(r => r[3] === null ? { time: r[0] + tzOffset }
     : { time: r[0] + tzOffset, value: r[3], color: r[3] >= 0 ? "rgba(34,197,94,.6)" : "rgba(239,68,68,.6)" }));
+}
+
+// ---- canlı göstergeler (Python indicators.py ile aynı formüller) ----
+const emaA = (a, p) => { const k = 2 / (p + 1); let prev = null; return a.map(v => prev = prev === null ? v : v * k + prev * (1 - k)); };
+const demaA = (a, p) => { const e1 = emaA(a, p), e2 = emaA(e1, p); return e1.map((v, i) => 2 * v - e2[i]); };
+const roll = (a, p, fn) => a.map((_, i) => { if (i < p - 1) return null; const w = a.slice(i - p + 1, i + 1); return w.some(v => v === null) ? null : fn(w); });
+const mean = w => w.reduce((s, v) => s + v, 0) / w.length;
+const std = w => { const m = mean(w); return Math.sqrt(mean(w.map(v => (v - m) ** 2))); };
+function rsiA(c, p = 14) {
+  const out = [null]; let g = null, l = null;
+  for (let i = 1; i < c.length; i++) {
+    const d = c[i] - c[i - 1], up = Math.max(d, 0), dn = Math.max(-d, 0);
+    g = g === null ? up : g + (up - g) / p; l = l === null ? dn : l + (dn - l) / p;
+    out.push(l === 0 ? 100 : 100 - 100 / (1 + g / l));
+  }
+  return out;
+}
+function bandsA(close, p = 20, n = 2) {
+  const mid = roll(close, p, mean), sd = roll(close, p, std);
+  return { mid, up: mid.map((m, i) => m === null ? null : m + n * sd[i]), lo: mid.map((m, i) => m === null ? null : m - n * sd[i]) };
+}
+function stochA(close, r = rsiA(close)) {
+  const rmin = roll(r, 14, w => Math.min(...w)), rmax = roll(r, 14, w => Math.max(...w));
+  const st = r.map((v, i) => rmin[i] === null ? null : (v - rmin[i]) / (rmax[i] - rmin[i]) * 100);
+  const k = roll(st, 3, mean);
+  return { k, d: roll(k, 3, mean) };
+}
+// TradingView "MACD DEMA": hızlı/yavaş ortalamalar ve sinyal çizgisi EMA yerine DEMA
+function macdDemaA(close) {
+  const f = demaA(close, 12), sl = demaA(close, 26), m = f.map((v, i) => v - sl[i]), s = demaA(m, 9);
+  return { m, s, h: m.map((v, i) => v - s[i]) };
+}
+const stochBuy = k => k !== null && Math.round(k * 100) / 100 <= 0;     // %K tam 0,00
+const stochSell = k => k !== null && Math.round(k * 100) / 100 >= 100;  // %K tam 100,00
+const dirOfBools = (b, s) => (b ? 1 : 0) - (s ? 1 : 0);
+
+// rows: [zaman(sn), açılış, yüksek, düşük, kapanış, hacim]
+function resampleRows(rows, minutes, origin = "start_day") {
+  const sec = minutes * 60, g = new Map();
+  for (const x of rows) {
+    const day = x[0] - x[0] % 86400, t = origin === "epoch" ? x[0] - x[0] % sec : day + Math.floor((x[0] - day) / sec) * sec;
+    const b = g.get(t);
+    if (!b) g.set(t, [t, x[1], x[2], x[3], x[4], x[5] || 0]);
+    else { b[2] = Math.max(b[2], x[2]); b[3] = Math.min(b[3], x[3]); b[4] = x[4]; b[5] += x[5] || 0; }
+  }
+  return [...g.values()];
+}
+const toRows = data => {
+  const m = new Map();
+  for (const x of data) m.set(Math.floor(x[0] / 1000), [Math.floor(x[0] / 1000), +x[1], +x[2], +x[3], +x[4], +(x[5] || 0)]);
+  return [...m.values()].sort((a, b) => a[0] - b[0]);
+};
+async function tradfiRows(symbol, step) {
+  const r = await fetch(`https://www.bitget.com/v1/kline/getMoreKlineDataV2?symbolId=${symbol}&kLineStep=${step}&kLineType=5&endTime=${Date.now() + 3600000}`, { cache: "no-store" });
+  const j = await r.json();
+  if (j.code !== "00000" || !j.data || !j.data.length) throw new Error(`${symbol} ${step} canlı mum verisi yok`);
+  return toRows(j.data).map(x => (x[5] = 0, x));
+}
+async function bitgetRows(symbol, gran, limit = 1000) {
+  const r = await fetch(`https://api.bitget.com/api/v2/mix/market/candles?symbol=${symbol}&productType=USDT-FUTURES&granularity=${gran}&limit=${limit}`, { cache: "no-store" });
+  const j = await r.json();
+  if (!j.data || !j.data.length) throw new Error(symbol + " için mum verisi yok");
+  return toRows(j.data);
+}
+// grafik altı paneller: [zaman, MACD DEMA, sinyal, histogram, %K, %D]
+function oscRows(rows) {
+  const close = rows.map(x => x[4]), M = macdDemaA(close), S = stochA(close);
+  const num = (v, n) => v === null || isNaN(v) ? null : +v.toFixed(n);
+  return rows.map((x, i) => [x[0], num(M.m[i], 3), num(M.s[i], 3), num(M.h[i], 3), num(S.k[i], 2), num(S.d[i], 2)]).slice(-200);
 }

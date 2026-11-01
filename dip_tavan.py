@@ -13,14 +13,13 @@ import pandas as pd
 
 import dashboard
 from bot import SOURCE_LABEL, SYMBOL, TF_15M, _closed_only, _download, position_line, send_telegram, status_due
-from indicators import bollinger, ema, macd, rsi, stoch_rsi
+from indicators import bollinger, ema, macd_dema, rsi, stoch_buy, stoch_rsi, stoch_sell
 
 # ---------------------------------------------------------------- AYARLAR ---
 TIMEFRAMES = {"15dk": 15, "30dk": 30, "45dk": 45, "1s": 60}
 EMA_FAST, EMA_SLOW = 9, 21
 BB_PERIOD, BB_STD = 20, 2.0
 RSI_PERIOD, RSI_LOW, RSI_HIGH = 14, 35, 65
-STOCH_LOW, STOCH_HIGH = 25, 75
 VOLUME_PERIOD, VOLUME_SPIKE = 20, 1.5
 LOOKBACK = 3            # dip/tavan koşulları son 3 mum içinde aranır
 MIN_SCORE_15M = 4       # 15dk'da 6 göstergeden en az 4'ü dip/tavan demeli
@@ -50,17 +49,15 @@ def dip_top_scores(df: pd.DataFrame) -> pd.DataFrame:
     e_fast, e_slow = ema(c, EMA_FAST), ema(c, EMA_SLOW)
     up, _, low = bollinger(c, BB_PERIOD, BB_STD)
     r = rsi(c, RSI_PERIOD)
-    k, d = stoch_rsi(c)
-    _, _, hist = macd(c)
+    k, _ = stoch_rsi(c)
+    _, _, hist = macd_dema(c)
     vol_spike = (v > VOLUME_SPIKE * v.rolling(VOLUME_PERIOD).mean()).rolling(LOOKBACK).max() > 0
-    cross_up = ((k > d) & (k.shift() <= d.shift())).rolling(2).max() > 0
-    cross_dn = ((k < d) & (k.shift() >= d.shift())).rolling(2).max() > 0
     w = LOOKBACK
 
     dip = pd.DataFrame({
         "BOLLINGER": (l <= low).rolling(w).max() > 0,               # alt banda dokundu
         "RSI": (r.rolling(w).min() < RSI_LOW) & (r > r.shift()),     # aşırı satımdan dönüyor
-        "STOCHRSI": cross_up & (d.rolling(w).min() < STOCH_LOW),    # dipte yukarı kesişim
+        "STOCHRSI": stoch_buy(k).rolling(w).max() > 0,                # %K tam 0,00'a indi
         "MACD": (hist < 0) & (hist > hist.shift()),                  # düşüş momentumu zayıflıyor
         "EMA": (c > e_fast) & (e_fast < e_slow),                     # düşüş trendinde EMA9 geri alındı
         "HACIM": vol_spike,                                          # hacim patlaması
@@ -68,7 +65,7 @@ def dip_top_scores(df: pd.DataFrame) -> pd.DataFrame:
     top = pd.DataFrame({
         "BOLLINGER": (h >= up).rolling(w).max() > 0,
         "RSI": (r.rolling(w).max() > RSI_HIGH) & (r < r.shift()),
-        "STOCHRSI": cross_dn & (d.rolling(w).max() > STOCH_HIGH),
+        "STOCHRSI": stoch_sell(k).rolling(w).max() > 0,               # %K tam 100,00'a çıktı
         "MACD": (hist > 0) & (hist < hist.shift()),
         "EMA": (c < e_fast) & (e_fast > e_slow),
         "HACIM": vol_spike,

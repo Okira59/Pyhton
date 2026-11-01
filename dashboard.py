@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from indicators import macd, stoch_rsi
+from indicators import macd_dema, stoch_rsi
 
 OUT_DIR = os.getenv("DASHBOARD_DIR", os.path.join("docs", "data"))
 N_CANDLES = 200
@@ -24,8 +24,8 @@ def candles(df: pd.DataFrame, open_times) -> list:
 
 
 def oscillators(close: pd.Series, open_times) -> list:
-    """Grafik altı paneller: [zaman, MACD, sinyal, histogram, %K, %D] (12/26/9, StochRSI 14/14/3/3)."""
-    m, sig, hist = macd(close)
+    """Grafik altı paneller: [zaman, MACD DEMA, sinyal, histogram, %K, %D] (12/26/9, StochRSI 14/14/3/3)."""
+    m, sig, hist = macd_dema(close)
     k, d = stoch_rsi(close)
     cols = [x.tail(N_CANDLES) for x in (m, sig, hist, k, d)]
     times = list(open_times)[-len(cols[0]):]

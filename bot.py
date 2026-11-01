@@ -14,7 +14,7 @@ import requests
 import yfinance as yf
 
 import dashboard
-from indicators import bollinger, ema, macd, stoch_rsi
+from indicators import bollinger, ema, macd_dema, stoch_buy, stoch_rsi, stoch_sell
 
 # ---------------------------------------------------------------- AYARLAR ---
 # Veri kaynağı: Bitget TradFi XAUUSD (varsayılan), Bitget vadeli XAUUSDT ya da Yahoo GC=F
@@ -29,7 +29,6 @@ EMA_FAST, EMA_SLOW = 20, 50
 BB_PERIOD, BB_STD = 20, 2.0
 MACD_FAST, MACD_SLOW, MACD_SIGNAL = 12, 26, 9
 STOCH_RSI, STOCH_PERIOD, STOCH_K, STOCH_D = 14, 14, 3, 3
-STOCH_OVERBOUGHT, STOCH_OVERSOLD = 80, 20
 
 # Kâr al: sinyalden sonra fiyat bu kadar pip kâra ulaşınca "KAPAT" sinyali
 TP_PIPS = float(os.getenv("TP_PIPS", "20"))
@@ -169,7 +168,7 @@ def add_signals(df: pd.DataFrame) -> pd.DataFrame:
     df["ema_fast"] = ema(c, EMA_FAST)
     df["ema_slow"] = ema(c, EMA_SLOW)
     df["bb_up"], df["bb_mid"], df["bb_low"] = bollinger(c, BB_PERIOD, BB_STD)
-    df["macd"], df["macd_sig"], _ = macd(c, MACD_FAST, MACD_SLOW, MACD_SIGNAL)
+    df["macd"], df["macd_sig"], _ = macd_dema(c, MACD_FAST, MACD_SLOW, MACD_SIGNAL)
     df["k"], df["d"] = stoch_rsi(c, STOCH_RSI, STOCH_PERIOD, STOCH_K, STOCH_D)
 
     def direction(bull, bear):
@@ -181,11 +180,10 @@ def add_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Bollinger: fiyat orta bandın üstünde ama üst bandı aşmamış -> yükseliş
     df["BOLLINGER"] = direction((c > df.bb_mid) & (c < df.bb_up),
                                 (c < df.bb_mid) & (c > df.bb_low))
-    # MACD: MACD çizgisi sinyal çizgisinin üstünde -> yükseliş
+    # MACD DEMA: MACD çizgisi sinyal çizgisinin üstünde -> yükseliş
     df["MACD"] = direction(df.macd > df.macd_sig, df.macd < df.macd_sig)
-    # StochRSI: %K > %D ve aşırı alım bölgesinde değil -> yükseliş
-    df["STOCHRSI"] = direction((df.k > df.d) & (df.k < STOCH_OVERBOUGHT),
-                               (df.k < df.d) & (df.k > STOCH_OVERSOLD))
+    # StochRSI: %K tam 0,00 -> AL, tam 100,00 -> SAT
+    df["STOCHRSI"] = direction(stoch_buy(df.k), stoch_sell(df.k))
 
     df["score"] = df[INDICATORS].sum(axis=1)
     return df

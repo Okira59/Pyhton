@@ -21,7 +21,7 @@
   </nav>
   <div class="muted small" style="margin-left:auto;text-align:right">
     Veri: <span id="source">–</span> · Son güncelleme: <span id="updated">–</span><br>
-    Sayfa her dakika yenilenir · bot her 15 dakikada çalışır
+    Fiyat ve göstergeler 10 sn'de bir canlı · bot her 15 dakikada çalışır
   </div>
 </header>
 <div id="error"></div>
@@ -29,14 +29,14 @@
   <section class="card wide">
     <h2>Fiyat grafiği (15dk) <span class="muted small">▲ AL · ▼ SAT</span></h2>
     <div id="chart"></div>
-    <div class="osc-title">StochRSI (14,14,3,3) · <span style="color:#3b82f6">%K</span> · <span style="color:#f59e0b">%D</span> · 20 / 80</div>
+    <div class="osc-title">StochRSI (14,14,3,3) · <span style="color:#3b82f6">%K</span> · <span style="color:#f59e0b">%D</span> · AL 0 / SAT 100</div>
     <div id="stoch"></div>
-    <div class="osc-title">MACD (12,26,9) · <span style="color:#3b82f6">MACD</span> · <span style="color:#f59e0b">Sinyal</span> · histogram</div>
+    <div class="osc-title">MACD DEMA (12,26,9) · <span style="color:#3b82f6">MACD</span> · <span style="color:#f59e0b">Sinyal</span> · histogram</div>
     <div id="macd"></div>
   </section>
 
   <section class="card">
-    <h2>Göstergeler <span class="muted small">15dk + 4s · 4 gösterge</span></h2>
+    <h2>Göstergeler <span class="muted small">15dk + 4s · 4 gösterge · canlı (oluşan mum dahil)</span></h2>
     <table id="s-ind"></table>
     <div id="s-result" class="result"></div>
     <h3>Açık işlem</h3>
@@ -54,6 +54,26 @@
 </main>
 <script src="common.js"></script>
 <script>
+// bot.py add_signals ile aynı kurallar (EMA 20/50, Bollinger 20/2, MACD DEMA, StochRSI 0/100)
+function altinDirs(rows) {
+  const c = rows.map(x => x[4]), i = c.length - 1, C = c[i];
+  const ef = emaA(c, 20), es = emaA(c, 50), B = bandsA(c), M = macdDemaA(c), S = stochA(c);
+  return {
+    EMA: dirOfBools(ef[i] > es[i] && C > ef[i], ef[i] < es[i] && C < ef[i]),
+    BOLLINGER: dirOfBools(C > B.mid[i] && C < B.up[i], C < B.mid[i] && C > B.lo[i]),
+    MACD: dirOfBools(M.m[i] > M.s[i], M.m[i] < M.s[i]),
+    STOCHRSI: dirOfBools(stochBuy(S.k[i]), stochSell(S.k[i])),
+  };
+}
+async function liveAltin(x) {
+  const [m15, h1] = await Promise.all([tradfiRows(x.symbol, "15m"), tradfiRows(x.symbol, "1h")]);
+  const a = altinDirs(m15), b = altinDirs(resampleRows(h1, 240, "epoch"));
+  const sum = o => Object.values(o).reduce((p, v) => p + v, 0), n = Object.keys(a).length;
+  const indicators = {};
+  for (const k of Object.keys(a)) indicators[k] = { "15dk": a[k], "4s": b[k] };
+  return { price: m15[m15.length - 1][4], candles: m15.slice(-200).map(r => r.slice(0, 5)), osc: oscRows(m15), indicators,
+           signal: sum(a) === n && sum(b) === n ? 1 : sum(a) === -n && sum(b) === -n ? -1 : 0 };
+}
 startPage("sinyal", s => {
   const tfs = ["15dk", "4s"];
   $("s-ind").innerHTML = "<tr><th>Gösterge</th>" + tfs.map(t => `<th>${t}</th>`).join("") + "</tr>" +
@@ -67,7 +87,7 @@ startPage("sinyal", s => {
   $("s-stats").innerHTML = statsHtml(s.stats);
   $("s-hist").innerHTML = historyHtml(s.history);
   renderChart(s, null);
-});
+}, liveAltin);
 </script>
 </body>
 </html>

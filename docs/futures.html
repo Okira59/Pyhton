@@ -23,7 +23,7 @@
   <button id="sound" class="btn">🔔 Gong sesini aç</button>
   <div class="muted small" style="margin-left:auto;text-align:right">
     Bot verisi: Bitget Futures · <span id="ncoin">–</span> coin · Son güncelleme: <span id="updated">–</span><br>
-    Grafik canlı Bitget verisi · bot her 5 dakikada çalışır
+    Grafik, göstergeler ve kâr/zarar 10 sn'de bir canlı · bot her 5 dakikada çalışır
   </div>
 </header>
 <div id="error"></div>
@@ -37,14 +37,14 @@
     <div id="chart"></div>
     <div class="osc-title">RSI (14) · 30 / 50 / 70</div>
     <div id="rsi" class="osc"></div>
-    <div class="osc-title">StochRSI (14,14,3,3) · <span style="color:#3b82f6">%K</span> · <span style="color:#f59e0b">%D</span> · 20 / 80</div>
+    <div class="osc-title">StochRSI (14,14,3,3) · <span style="color:#3b82f6">%K</span> · <span style="color:#f59e0b">%D</span> · AL 0 / SAT 100</div>
     <div id="stoch" class="osc"></div>
-    <div class="osc-title">MACD (12,26,9) · <span style="color:#3b82f6">MACD</span> · <span style="color:#f59e0b">Sinyal</span> · histogram</div>
+    <div class="osc-title">MACD DEMA (12,26,9) · <span style="color:#3b82f6">MACD</span> · <span style="color:#f59e0b">Sinyal</span> · histogram</div>
     <div id="macd" class="osc"></div>
   </section>
 
   <section class="card">
-    <h2>Gösterge yönleri <span class="muted small">6 zaman dilimi · 6 gösterge</span></h2>
+    <h2>Gösterge yönleri <span class="muted small">6 zaman dilimi · 6 gösterge <span id="f-live"></span></span></h2>
     <table id="f-scores"></table>
     <div id="f-result" class="result"></div>
   </section>
@@ -60,7 +60,7 @@
     <div class="scroll"><table id="f-hist"></table></div>
   </section>
 
-  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Her işlem isolated $20 teminat (10x = $200 pozisyon) ile açılır, aynı anda en fazla 5 işlem, bir yönde (LONG ya da SHORT) en fazla 3 işlem açık olur; limit doluyken gelen sinyaller sadece Telegram'a bildirilir. Aynı anda birden fazla sinyal gelirse puanı en yüksek olanlar önce açılır. Gerçek işlemde limit emirle girilmesi önerilir (daha düşük ücret). Sabit kâr hedefi yoktur: ilk stop -%20 ROE; kâr +%20 ROE'ye ulaşınca iz süren stop devreye girer ve en yüksek kârın %15 ROE gerisinden takip eder. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
+  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Her işlem isolated $20 teminat (10x = $200 pozisyon) ile açılır, aynı anda en fazla 10 işlem açık olur; limit doluyken gelen sinyaller sadece Telegram'a bildirilir. Aynı anda birden fazla sinyal gelirse puanı en yüksek olanlar önce açılır. Gerçek işlemde limit emirle girilmesi önerilir (daha düşük ücret). Sabit kâr hedefi yoktur: ilk stop -%20 ROE; kâr +%20 ROE'ye ulaşınca iz süren stop devreye girer ve en yüksek kârın %15 ROE gerisinden takip eder. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
   işlem ücreti (giriş+çıkış ≈ %1,2 ROE) ve fonlama dahil değildir. Geçmiş tablo botun canlı açıp kapattığı işlemlerdir. Yatırım tavsiyesi değildir.</p>
 </main>
 <script src="common.js"></script>
@@ -73,33 +73,44 @@ const dpOf = s => { const c = bot && bot.coins.find(c => c.s === s); return c ? 
 const fp = (v, s = sym) => fmt(v, dpOf(s));
 const usdF = (r, p) => { const v = (p && p.margin || (bot ? bot.margin_usd : 20)) * r / 100; return (v >= 0 ? "+$" : "-$") + fmt(Math.abs(v), 2); };
 const roeOf = (p, price) => p.dir * (price - p.entry) / p.entry * 100 * (bot ? bot.leverage : 10);
-const priceOf = s => s === sym && livePrice ? livePrice : bot && bot.prices[s];
+const priceOf = s => s === sym && livePrice ? livePrice : ticks[s] || bot && bot.prices[s];
 
 // ---- göstergeler (Python indicators.py ile aynı formüller) ----
-const emaA = (a, p) => { const k = 2 / (p + 1); let prev = null; return a.map(v => prev = prev === null ? v : v * k + prev * (1 - k)); };
-const roll = (a, p, fn) => a.map((_, i) => { if (i < p - 1) return null; const w = a.slice(i - p + 1, i + 1); return w.some(v => v === null) ? null : fn(w); });
-const mean = w => w.reduce((s, v) => s + v, 0) / w.length;
-const std = w => { const m = mean(w); return Math.sqrt(mean(w.map(v => (v - m) ** 2))); };
-function rsiA(c, p = 14) {
-  const out = [null]; let g = null, l = null;
-  for (let i = 1; i < c.length; i++) {
-    const d = c[i] - c[i - 1], up = Math.max(d, 0), dn = Math.max(-d, 0);
-    g = g === null ? up : g + (up - g) / p; l = l === null ? dn : l + (dn - l) / p;
-    out.push(l === 0 ? 100 : 100 - 100 / (1 + g / l));
-  }
-  return out;
-}
 function indicators(c) {
-  const close = c.map(x => x[4]);
-  const e9 = emaA(close, 9), e21 = emaA(close, 21);
-  const mid = roll(close, 20, mean), sd = roll(close, 20, std);
-  const up = mid.map((m, i) => m === null ? null : m + 2 * sd[i]), lo = mid.map((m, i) => m === null ? null : m - 2 * sd[i]);
-  const r = rsiA(close);
-  const rmin = roll(r, 14, w => Math.min(...w)), rmax = roll(r, 14, w => Math.max(...w));
-  const st = r.map((v, i) => rmin[i] === null ? null : (v - rmin[i]) / (rmax[i] - rmin[i]) * 100);
-  const k = roll(st, 3, mean), d = roll(k, 3, mean);
-  const m = emaA(close, 12).map((v, i) => v - emaA(close, 26)[i]);
-  return { e9, e21, mid, up, lo, r, k, d, m };
+  const close = c.map(x => x[4]), r = rsiA(close);
+  return { e9: emaA(close, 9), e21: emaA(close, 21), ...bandsA(close), r, ...stochA(close, r), ...macdDemaA(close) };
+}
+// futures.py directions ile aynı kurallar; son (oluşan) mum için [EMA, BOLLINGER, RSI, STOCHRSI, MACD, HACIM]
+function futDirs(rows) {
+  const c = rows.map(x => x[4]), v = rows.map(x => x[5]), i = c.length - 1, C = c[i], o = rows[i][1];
+  const I = indicators(rows), vm = roll(v, 20, mean), volHi = vm[i] !== null && v[i] > vm[i];
+  return [
+    dirOfBools(I.e9[i] > I.e21[i] && C > I.e9[i], I.e9[i] < I.e21[i] && C < I.e9[i]),
+    dirOfBools(C > I.mid[i] && C < I.up[i], C < I.mid[i] && C > I.lo[i]),
+    dirOfBools(I.r[i] > 50 && I.r[i] < 70, I.r[i] < 50 && I.r[i] > 30),
+    dirOfBools(stochBuy(I.k[i]), stochSell(I.k[i])),
+    dirOfBools(I.m[i] > I.s[i], I.m[i] < I.s[i]),
+    dirOfBools(volHi && C > o, volHi && C < o)];
+}
+let liveCoin = null, ticks = {};
+const LIVE_GRAN = { "5dk": "5m", "15dk": "15m", "30dk": "30m", "1s": "1H", "4s": "4H" };
+async function liveScores() {
+  const s0 = sym, fr = {};
+  await Promise.all(Object.entries(LIVE_GRAN).map(async ([n, g]) => fr[n] = await bitgetRows(s0, g)));
+  fr["45dk"] = resampleRows(fr["15dk"], 45);
+  if (s0 !== sym || !bot) return;
+  const tfs = bot.timeframes, d = tfs.map(n => futDirs(fr[n])), sc = d.map(a => a.reduce((p, v) => p + v, 0));
+  const s5 = sc[tfs.indexOf("5dk")], hs = sc.filter((_, j) => tfs[j] !== "5dk");
+  const sig = s5 >= bot.min_score_5m && hs.filter(v => v >= bot.min_score_higher).length >= bot.min_higher_tfs ? 1
+    : s5 <= -bot.min_score_5m && hs.filter(v => v <= -bot.min_score_higher).length >= bot.min_higher_tfs ? -1 : 0;
+  liveCoin = { s: s0, sc, sig, ind: d.map(a => a.map(v => v > 0 ? "+" : v < 0 ? "-" : "0").join("")) };
+  renderScores(bot);
+}
+async function liveTickers() {
+  const r = await fetch("https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES", { cache: "no-store" });
+  const j = await r.json();
+  for (const t of j.data || []) ticks[t.symbol] = +t.lastPr;
+  if (bot) renderPositions();
 }
 
 async function candles() {
@@ -145,7 +156,7 @@ function setupCharts() {
     for (const [v, c] of lines) s.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
   };
   fixed(ch.r, 0, 100, [[70, "#ef4444"], [50, "#4b5563"], [30, "#22c55e"]]);
-  fixed(ch.k, 0, 100, [[80, "#ef4444"], [20, "#22c55e"]]);
+  fixed(ch.k, 0, 100, [[100, "#ef4444"], [0, "#22c55e"]]);
   const all = [main, rs, st, mc];
   let syncing = false;
   all.forEach(src => src.timeScale().subscribeVisibleLogicalRangeChange(r => {
@@ -162,7 +173,7 @@ async function renderLive() {
   const I = indicators(rows);
   const t = i => rows[i][0] + tzOffset;
   const pts = a => a.map((v, i) => v === null || isNaN(v) ? { time: t(i) } : { time: t(i), value: v });
-  const sig = emaA(I.m, 9), dp = dpOf(sym), mdp = Math.min(dp + 2, 8);
+  const sig = I.s, dp = dpOf(sym), mdp = Math.min(dp + 2, 8);
   ch.candle.applyOptions({ priceFormat: { type: "price", precision: dp, minMove: 1 / 10 ** dp } });
   for (const s of [ch.m, ch.s, ch.hist]) s.applyOptions({ priceFormat: { type: "price", precision: mdp, minMove: 1 / 10 ** mdp } });
   ch.candle.setData(rows.map((x, i) => ({ time: t(i), open: x[1], high: x[2], low: x[3], close: x[4] })));
@@ -199,7 +210,7 @@ function drawBot() {
 const sideF = d => d === 1 ? '<span class="badge buy">LONG</span>' : '<span class="badge sell">SHORT</span>';
 const dirOf = ch_ => ch_ === "+" ? 1 : ch_ === "-" ? -1 : 0;
 function selectCoin(s) {
-  sym = s; localStorage.setItem("futSym", s); livePrice = null; liveRows = null;
+  sym = s; localStorage.setItem("futSym", s); livePrice = null; liveRows = null; liveCoin = null;
   $("coin").value = s; $("sym").textContent = s;
   if (bot) renderBot(bot, false);
   live();
@@ -216,7 +227,8 @@ function renderCoins(x) {
   $("coin").value = sym;
 }
 function renderScores(x) {
-  const c = x.coins.find(c => c.s === sym), tfs = x.timeframes;
+  const live = liveCoin && liveCoin.s === sym ? liveCoin : null, c = live || x.coins.find(c => c.s === sym), tfs = x.timeframes;
+  $("f-live").textContent = live ? "· canlı (oluşan mum dahil; bot mum kapanışında karar verir)" : "";
   if (!c) {
     $("f-scores").innerHTML = "";
     $("f-result").className = "result neutral";
@@ -307,8 +319,10 @@ $("sym").textContent = sym;
 markTab();
 setupCharts();
 async function live() {
-  try { await renderLive(); $("error").style.display = "none"; }
-  catch (e) { $("error").textContent = "Bitget canlı verisi alınamadı: " + e.message; $("error").style.display = "block"; }
+  const res = await Promise.allSettled([renderLive(), liveScores(), liveTickers()]);
+  const bad = res.find(r => r.status === "rejected");
+  if (bad) { $("error").textContent = "Bitget canlı verisi alınamadı: " + bad.reason.message; $("error").style.display = "block"; }
+  else $("error").style.display = "none";
 }
 async function botRefresh() {
   try {
@@ -320,7 +334,7 @@ async function botRefresh() {
 }
 botRefresh();
 setInterval(botRefresh, 60000);
-setInterval(live, 15000);
+setInterval(live, 10000);
 </script>
 </body>
 </html>

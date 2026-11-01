@@ -1,11 +1,11 @@
 """Bitget USDT vadeli (futures) 10x simülasyon botu – hacmi en yüksek coinler.
 
 Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinleri) tarar.
-5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI, MACD ve
+5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI (0/100), MACD DEMA ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
 zarar %20'ye ulaşınca işlem kapatılır; kâr %20'yi geçince iz süren stop devreye girer. Her işlem isolated $20
-teminatla açılır; aynı anda en fazla 5 işlem, bir yönde en fazla 3 işlem açık olur (doluyken sinyal bildirilir,
+teminatla açılır; aynı anda en fazla 10 işlem açık olur (doluyken sinyal bildirilir,
 işlem açılmaz; aynı anda gelen sinyallerden puanı en yüksek olanlar önce açılır). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
 """
@@ -21,10 +21,10 @@ import requests
 import bot
 import dashboard
 from bot import _closed_only, send_telegram, status_due
-from indicators import bollinger, ema, macd, rsi, stoch_rsi
+from indicators import bollinger, ema, macd_dema, rsi, stoch_buy, stoch_rsi, stoch_sell
 
 # ---------------------------------------------------------------- AYARLAR ---
-TOP_N = int(os.getenv("TOP_N", "100"))
+TOP_N = int(os.getenv("TOP_N", "200"))
 WORKERS = 5
 TIMEFRAMES = {"5dk": 5, "15dk": 15, "30dk": 30, "45dk": 45, "1s": 60, "4s": 240}
 GRAN = {"5dk": "5m", "15dk": "15m", "30dk": "30m", "1s": "1H", "4s": "4H"}  # 45dk = 15dk'dan
@@ -32,7 +32,6 @@ HIGHER = [n for n in TIMEFRAMES if n != "5dk"]
 EMA_FAST, EMA_SLOW = 9, 21
 BB_PERIOD, BB_STD = 20, 2.0
 RSI_PERIOD = 14
-STOCH_HIGH, STOCH_LOW = 80, 20
 VOLUME_PERIOD = 20
 
 MIN_SCORE_5M = int(os.getenv("MIN_SCORE_5M", "5"))         # 5dk'da 6 göstergeden en az bu kadarı aynı yönde
@@ -44,8 +43,8 @@ SL_ROE = float(os.getenv("SL_ROE", "20"))  # ilk zarar durdur, kaldıraçlı % (
 TRAIL_START_ROE = float(os.getenv("TRAIL_START_ROE", "20"))  # kâr bu ROE'ye ulaşınca iz süren stop başlar
 TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden izler
 MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
-MAX_OPEN = int(os.getenv("MAX_OPEN", "5"))  # aynı anda en fazla açık işlem
-MAX_SAME_DIR = int(os.getenv("MAX_SAME_DIR", "3"))  # bir yönde (LONG ya da SHORT) en fazla açık işlem
+MAX_OPEN = int(os.getenv("MAX_OPEN", "10"))  # aynı anda en fazla açık işlem
+MAX_SAME_DIR = int(os.getenv("MAX_SAME_DIR", "0")) or MAX_OPEN  # bir yönde en fazla açık işlem (0 = yön limiti yok)
 
 STATE_FILE = os.getenv("STATE_FILE", "futures_state.json")
 REPORT_TZ = os.getenv("REPORT_TZ", "Europe/Istanbul")  # gün sonu raporu bu saat diliminde gece yarısı gönderilir
@@ -117,8 +116,8 @@ def directions(df: pd.DataFrame) -> pd.DataFrame:
     e_fast, e_slow = ema(c, EMA_FAST), ema(c, EMA_SLOW)
     up, mid, low = bollinger(c, BB_PERIOD, BB_STD)
     r = rsi(c, RSI_PERIOD)
-    k, d = stoch_rsi(c)
-    m, sig, _ = macd(c)
+    k, _ = stoch_rsi(c)
+    m, sig, _ = macd_dema(c)
     vol_hi = v > v.rolling(VOLUME_PERIOD).mean()
 
     def dirn(bull, bear):
@@ -128,7 +127,7 @@ def directions(df: pd.DataFrame) -> pd.DataFrame:
         "EMA": dirn((e_fast > e_slow) & (c > e_fast), (e_fast < e_slow) & (c < e_fast)),
         "BOLLINGER": dirn((c > mid) & (c < up), (c < mid) & (c > low)),
         "RSI": dirn((r > 50) & (r < 70), (r < 50) & (r > 30)),
-        "STOCHRSI": dirn((k > d) & (k < STOCH_HIGH), (k < d) & (k > STOCH_LOW)),
+        "STOCHRSI": dirn(stoch_buy(k), stoch_sell(k)),
         "MACD": dirn(m > sig, m < sig),
         "HACIM": dirn(vol_hi & (c > o), vol_hi & (c < o)),
     }, index=df.index)
@@ -331,7 +330,7 @@ def _load_state() -> dict:
 def _status_text(results: dict, state: dict) -> str:
     pos = state["positions"]
     lines = ["🕐 SAATLİK DURUM – Futures", f"Taranan coin: {len(results)}  |  açık işlem: {len(pos)}/{MAX_OPEN}"
-             f" (yön başına en fazla {MAX_SAME_DIR})", ""]
+             + (f" (yön başına en fazla {MAX_SAME_DIR})" if MAX_SAME_DIR < MAX_OPEN else ""), ""]
     for sym, p in list(pos.items())[:40]:
         data = results.get(sym)
         if data is None:
