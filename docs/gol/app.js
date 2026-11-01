@@ -311,30 +311,33 @@ function renderSkor() {
 // ---------- kuponlar ----------
 let KUPON = null;
 const fmtT = (ts) => new Date(ts * 1000).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-const KIND = { kisa: "4 saatlik", yuksek: "Günlük yüksek oran", gunluk: "Günlük 5-6 maçlık", iyms: "İY/MS · 4 saatlik", iyms_y: "İY/MS · günlük yüksek oran", skor: "Skor kuponu" };
+const KIND = { iyms: "İY/MS", skor: "İY + 2. yarı skoru", iyust: "İY 1.5 / 2.5 Üst", ust: "3.5 / 4.5 / 5.5 Üst", ms: "Maç sonucu (MS)", yuksek: "Yüksek oran",
+  kisa: "4 saatlik (eski)", gunluk: "Günlük 5-6 maçlık (eski)", iyms_y: "İY/MS yüksek oran (eski)" };
+const ORDER = ["iyms", "skor", "iyust", "ust", "ms", "yuksek"];
 const pTxt = (p) => (p >= 0.001 ? `%${(p * 100).toFixed(p >= 0.01 ? 1 : 2)}` : `${Math.round(1 / p).toLocaleString("tr-TR")}'de 1`);
 const mark = (r) => (r === true ? `<span class="pos">✓</span>` : r === false ? `<span class="neg">✗</span>` : "");
 function skorCard(c) {
   const ST = { "kazandı": ["win", "pos", "TUTTU"], "kaybetti": ["lose", "neg", "YATTI"], "sonuçsuz": ["", "", "Sonuçsuz"] };
   const a = ST[c.status] || ["", "", "Bekliyor"], b = ST[c.ms] || ["", "", "Bekliyor"];
+  const ft = c.legs.some((l) => l.ft);
   let h = `<div class="cp ${a[0]}"><div class="cp-h">
     <span class="tag y">Skor kuponu · ${c.legs.length}'lü</span>
-    <span>İY + 2. yarı skorları: <span class="big">${pTxt(c.p)}</span> <span class="${a[1]}">${a[2]}</span></span>
-    <span>Ekstra · sadece MS skorları: <span class="big">${pTxt(c.p_ft)}</span> <span class="${b[1]}">${b[2]}</span></span>
-    <span>Adil oran (MS) <span class="big">${Math.round(c.odd).toLocaleString("tr-TR")}</span></span>
-    <span class="note" style="margin:0">Hazırlandı: ${fmtT(c.created)}</span></div>
-    <div class="scroll"><table><tr><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th>İY skoru</th><th>2. yarı skoru</th><th>İY+2.Y birlikte</th><th>MS skoru (ekstra)</th><th>Adil oran (MS)</th><th>Gerçek skor (İY / MS)</th></tr>`;
+    <span>İY + 2. yarı skorları tutma olasılığı: <span class="big">${pTxt(c.p)}</span></span>
+    ${ft ? `<span>Sadece MS skorları: <span class="big">${pTxt(c.p_ft)}</span> <span class="${b[1]}">${b[2]}</span></span>` : `<span>Adil oran <span class="big">${Math.round(1 / c.p).toLocaleString("tr-TR")}</span></span>`}
+    <span class="note" style="margin:0">Hazırlandı: ${fmtT(c.created)}</span>
+    <span class="st ${a[1]}">${a[2]}</span></div>
+    <div class="scroll"><table><tr><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th>İY skoru</th><th>2. yarı skoru</th><th>İY+2.Y birlikte</th>${ft ? "<th>MS skoru</th>" : ""}<th>Gerçek skor (İY / MS)</th></tr>`;
   for (const l of c.legs) {
     h += `<tr><td>${fmtT(l.ts)}</td><td class="l">${esc(l.lg)}</td><td class="l">${esc(l.h)} - ${esc(l.a)}</td>
       <td><b>${l.ht}</b> <span class="note">%${f1(l.p_ht * 100)}</span> ${mark(l.r_ht)}</td>
       <td><b>${l.sh}</b> <span class="note">%${f1(l.p_sh * 100)}</span> ${mark(l.r_sh)}</td>
       <td>%${f1(l.p * 100)}</td>
-      <td><b>${l.ft}</b> <span class="note">%${f1(l.p_ft * 100)}</span> ${mark(l.r_ft)}</td>
-      <td>${(1 / l.p_ft).toFixed(2)}</td><td>${l.score ? esc(l.score) : "-"}</td></tr>`;
+      ${ft ? `<td><b>${l.ft || "-"}</b> ${l.p_ft ? `<span class="note">%${f1(l.p_ft * 100)}</span>` : ""} ${mark(l.r_ft)}</td>` : ""}
+      <td>${l.score ? esc(l.score) : "-"}</td></tr>`;
   }
   return h + "</table></div></div>";
 }
-const isHigh = (k) => k === "yuksek" || k === "iyms_y";
+const isHigh = (k) => k === "yuksek" || k === "iyms_y" || k === "skor";
 function couponCard(c, top) {
   if (c.kind === "skor") return skorCard(c);
   const st = { "kazandı": ["win", "pos", "TUTTU"], "kaybetti": ["lose", "neg", "YATTI"], "sonuçsuz": ["", "", "Sonuçsuz"] }[c.status] || ["", "", "Bekliyor"];
@@ -359,27 +362,26 @@ function renderKupon() {
   const now = Date.now() / 1000;
   const active = all.filter((c) => c.status === "bekliyor" && Math.max(...c.legs.map((l) => l.ts)) + 2.5 * 3600 > now);
   const done = all.filter((c) => c.status === "kazandı" || c.status === "kaybetti");
-  let h = `<p class="note">Kuponlar iddaa bültenindeki oranlardan otomatik hazırlanır: <b>4 saatte bir</b> önümüzdeki 12 saatin maçlarından 3'lü ve 4'lü kuponlar, <b>günde bir kez</b> (09:00 sonrası) o günün maçlarından 2-3 maçlık yüksek oranlı kuponlar, 5'li ve 6'lı günlük kuponlar ve 5-6 maçlık skor kuponları.
-    Tüm kuponlar <b>sadece iddaa'daki maçlardan</b>, iddaa oranlarıyla kurulur. <b>İY/MS kuponları</b> aynı zamanlamayla hazırlanır; iddaa bir maçın İY/MS oranını yayınlamamışsa aynı maçın Bet365 / William Hill oranı kullanılır (tabloda belirtilir).
+  let h = `<p class="note">Her gün 09:00'dan sonra o günün <b>iddaa maçlarından</b> 12 kupon hazırlanır, her türden 2 adet:
+    İY/MS, İY + 2. yarı skoru, İY 1.5 / 2.5 Üst, 3.5 / 4.5 / 5.5 Üst, Maç sonucu (MS) ve yüksek oranlı (tek maç oranı 2.40-6.00). Her türde tutma olasılığı en yüksek seçimler kullanılır.
+    Oranlar iddaa'dan; iddaa'da olmayan market (çoğunlukla İY/MS) için aynı maçın Bet365 / William Hill oranı kullanılır (tabloda belirtilir).
     Olasılık: oranın ima ettiği olasılık, son 3 ayda aynı oran seviyesindeki maçların gerçek sonuçlarına göre düzeltilir. Son güncelleme: ${fmtT(KUPON.updated)}</p>`;
   const sum = (kind) => { const d = done.filter((c) => c.kind === kind); const w = d.filter((c) => c.status === "kazandı"); const ret = w.reduce((s, c) => s + c.odd, 0);
-    return `<div class="card"><div class="t">${KIND[kind]} kuponlar (sonuçlanan)</div><div class="v">${w.length} / ${d.length}</div><div class="s">${d.length ? `tutma %${f1((100 * w.length) / d.length)} · 1 birim başına getiri ${(ret / d.length).toFixed(2)}` : "henüz sonuçlanan yok"}</div></div>`; };
-  h += `<div class="cards">${sum("kisa")}${sum("gunluk")}${sum("yuksek")}${sum("iyms")}${sum("iyms_y")}${sum("skor")}</div>`;
+    return `<div class="card"><div class="t">${KIND[kind]} (sonuçlanan)</div><div class="v">${w.length} / ${d.length}</div><div class="s">${d.length ? `tutma %${f1((100 * w.length) / d.length)}${kind === "skor" ? "" : ` · 1 birim başına getiri ${(ret / d.length).toFixed(2)}`}` : "henüz sonuçlanan yok"}</div></div>`; };
+  h += `<div class="cards">${ORDER.map(sum).join("")}</div>`;
+  if (!active.length) h += `<p class="note">Şu an bekleyen kupon yok. Günün kuponları 09:00'dan sonraki ilk güncellemede hazırlanır.</p>`;
   const normal = active.filter((c) => c.kind !== "skor");
-  const sk = active.filter((c) => c.kind === "skor").sort((a, b) => b.p_ft - a.p_ft);
-  if (!active.length) h += `<p class="note">Şu an bekleyen kupon yok. Bir sonraki güncellemede hazırlanacak.</p>`;
   const bestP = normal.reduce((m, c) => (!m || c.p > m.p ? c : m), null);
   const bestO = normal.filter((c) => c !== bestP).reduce((m, c) => (!m || c.odd > m.odd ? c : m), null);
   if (bestP) h += `<h2>Tutma olasılığı en yüksek kupon</h2>` + couponCard(bestP, true);
   if (bestO) h += `<h2>En yüksek oranlı kupon</h2>` + couponCard(bestO, false);
-  if (sk.length) {
-    h += `<h2>Günün skor kuponları <span class="note">(her maç için İY skoru + 2. yarı skoru, ekstra olarak MS skoru)</span></h2>
-      <p class="note">Her maçta en olası maç sonu skoru ve onu oluşturan en olası ilk yarı / 2. yarı ayrımı seçilir; günün en tahmin edilebilir maçları (en olası skorun olasılığı en yüksek olanlar) kullanılır. iddaa'da skor oranı olmadığı için "adil oran" = 1 / olasılık gösterilir.
-      <b>Dikkat:</b> tek maçın skorunu bilmek bile zordur (genelde %10-20); 5-6 maçın skorunun hepsinin tutması binlerce / on binlerce denemede bir olur.</p>`;
-    sk.forEach((c) => (h += couponCard(c, false)));
+  for (const k of [...ORDER, ...Object.keys(KIND).filter((x) => !ORDER.includes(x))]) {
+    const cs = active.filter((c) => c.kind === k && c !== bestP && c !== bestO).sort((a, b) => b.p - a.p);
+    if (!cs.length) continue;
+    h += `<h2>${KIND[k]} kuponları</h2>`;
+    if (k === "skor") h += `<p class="note">Her maç için en olası ilk yarı skoru ve en olası 2. yarı skoru (sadece 2. yarıda atılan goller). iddaa'da skor oranı olmadığı için "adil oran" = 1 / olasılık gösterilir.</p>`;
+    cs.forEach((c) => (h += couponCard(c, false)));
   }
-  const rest = normal.filter((c) => c !== bestP && c !== bestO).sort((a, b) => b.p - a.p);
-  if (rest.length) { h += `<h2>Diğer aktif kuponlar <span class="note">(tutma olasılığı yüksekten düşüğe)</span></h2>`; rest.forEach((c) => (h += couponCard(c, false))); }
   const top = KUPON.iyms_top || {};
   if (Object.keys(top).length) {
     h += `<h2>İY/MS seçenekleri: önümüzdeki 36 saatin en olası maçları <span class="note">(iddaa maçları; iddaa oranı yoksa Bet365 / William Hill)</span></h2><div class="scroll"><table><tr><th class="l">Seçenek</th><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th>Oran</th><th>Olasılık</th><th>Oranın ima ettiği</th></tr>`;
@@ -393,6 +395,42 @@ function renderKupon() {
   if (past.length) { h += `<h2>Geçmiş kuponlar (son 40)</h2>`; past.forEach((c) => (h += couponCard(c, false))); }
   h += `<p class="note">Uyarı: Geçmiş testte (son 45 gün) model olasılıkları gerçekleşenle uyumluydu ama kuponların uzun vadede kâr ettiği görülmedi. Bahis şirketinin marjı nedeniyle kâr garantisi yoktur.</p>`;
   el.innerHTML = h;
+}
+
+// ---------- oran arama ----------
+let BULTEN = null;
+function renderAra() {
+  const el = $("#tab-ara");
+  if (!el.innerHTML) {
+    el.innerHTML = `<p class="note">Bir oran yazın, iddaa bültenindeki (önümüzdeki 36 saat) sadece o orana sahip maçlar ve seçenekler listelensin.</p>
+      <div class="filters"><label>Oran <input id="a-odd" type="number" step="0.01" min="1" placeholder="örn. 1.85" style="width:90px"></label>
+      <label>Hassasiyet <select id="a-tol"><option value="0">Tam bu oran</option><option value="0.05">± 0.05</option><option value="0.10">± 0.10</option></select></label>
+      <label>Zaman <select id="a-day"><option value="1">Bugün</option><option value="0">Tüm bülten (36 saat)</option></select></label>
+      <label>Market <select id="a-mk"><option value="">Hepsi</option><option value="^MS ">Maç sonucu (MS)</option><option value="^İY [12X]$">İlk yarı sonucu</option><option value="^[0-9.]+ (Üst|Alt)">Alt / Üst</option><option value="^İY [0-9.]+ ">İY Alt / Üst</option><option value="^İY/MS">İY/MS</option><option value="^KG">KG Var / Yok</option></select></label>
+      <button id="a-go">Tara</button></div><div id="a-res"></div>`;
+  }
+}
+function runAra() {
+  const res = $("#a-res");
+  if (!BULTEN) { res.innerHTML = `<p class="note">Bülten yükleniyor...</p>`; return; }
+  const v = parseFloat(String($("#a-odd").value).replace(",", "."));
+  if (!(v > 1)) { res.innerHTML = `<p class="note">Geçerli bir oran yazın (örn. 1.85).</p>`; return; }
+  const tol = +$("#a-tol").value + 0.001, mk = $("#a-mk").value ? new RegExp($("#a-mk").value) : null;
+  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const lim = $("#a-day").value === "1" ? end.getTime() / 1000 : Infinity, now = Date.now() / 1000;
+  const rows = [];
+  for (const m of BULTEN.matches) {
+    if (m.ts < now || m.ts > lim) continue;
+    for (const [lab, o, p, ext] of m.o) if (Math.abs(o - v) <= tol && (!mk || mk.test(lab))) rows.push({ m, lab, o, p, ext });
+  }
+  rows.sort((a, b) => a.m.ts - b.m.ts || (b.p || 0) - (a.p || 0));
+  let h = `<p class="note"><b>${rows.length}</b> seçim, ${new Set(rows.map((r) => r.m.id)).size} maç bulundu. Bülten güncellemesi: ${fmtT(BULTEN.updated)}</p>`;
+  if (rows.length) {
+    h += `<div class="scroll"><table><tr><th>Saat</th><th class="l">Lig</th><th class="l">Maç</th><th class="l">Seçenek</th><th>Oran</th><th>Tutma olasılığı</th></tr>`;
+    for (const r of rows) h += `<tr><td>${fmtT(r.m.ts)}</td><td class="l">${esc(r.m.lg)}</td><td class="l">${esc(r.m.h)} - ${esc(r.m.a)}</td><td class="l"><b>${esc(r.lab)}</b>${r.ext ? ` <span class="note">(Bet365/WH)</span>` : ""}</td><td>${r.o.toFixed(2)}</td><td>${r.p ? `%${f1(r.p * 100)}` : "-"}</td></tr>`;
+    h += `</table></div>`;
+  }
+  res.innerHTML = h;
 }
 
 // ---------- filtre & olaylar ----------
@@ -430,10 +468,12 @@ document.addEventListener("click", (e) => {
   else if (b.dataset.iy) { state.iyLine = b.dataset.iy; state.iyGroup = "line"; renderIy(); }
   else if (b.dataset.iyms) { state.iymsT = b.dataset.iyms; renderIyms(); }
   else if (b.id === "more") { state.listN += 300; renderListe(); }
+  else if (b.id === "a-go") runAra();
 });
 document.addEventListener("change", (e) => {
   const id = e.target.id;
-  if (id.startsWith("f-")) { state.listN = 200; applyFilters(); }
+  if (id.startsWith("a-")) { if ($("#a-odd").value) runAra(); }
+  else if (id.startsWith("f-")) { state.listN = 200; applyFilters(); }
   else if (id === "g-ust") { state.ustGroup = e.target.value; renderUst(); }
   else if (id === "g-iy") { state.iyGroup = e.target.value; renderIy(); }
   else if (id === "g-iyms") { state.iymsGroup = e.target.value; renderIyms(); }
@@ -441,6 +481,7 @@ document.addEventListener("change", (e) => {
 });
 let qT;
 document.addEventListener("input", (e) => {
+  if (e.target.id === "a-odd") return;
   if (e.target.id !== "q") return;
   clearTimeout(qT);
   qT = setTimeout(() => { state.q = e.target.value; renderListe(); const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 250);
@@ -458,3 +499,7 @@ fetch("data/skorlar.json?" + Date.now())
   .catch(() => { SKOR = { matches: [] }; renderSkor(); });
 fetch("data/kuponlar.json?" + Date.now()).then((r) => r.json()).then((d) => { KUPON = d; renderKupon(); })
   .catch(() => { KUPON = { coupons: [], updated: 0 }; renderKupon(); });
+renderAra();
+document.addEventListener("keydown", (e) => { if (e.target.id === "a-odd" && e.key === "Enter") runAra(); });
+fetch("data/bulten.json?" + Date.now()).then((r) => r.json()).then((d) => { BULTEN = d; })
+  .catch(() => { BULTEN = { matches: [], updated: 0 }; });
