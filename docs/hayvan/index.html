@@ -1,37 +1,13 @@
 <!doctype html>
-<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sürü Takip</title><meta name="theme-color" content="#14532d"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon.svg">
-<style>
-:root{--bg:#0f1a14;--card:#1b2a21;--in:#25382c;--mut:#9fb3a6;--fg:#e8f0ea;--g:#22c55e;--y:#eab308;--r:#ef4444;--b:#3b82f6}
-*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
-header{padding:10px 12px 4px;display:flex;gap:12px;align-items:center;position:sticky;top:0;background:var(--bg);z-index:3}
-#menuBtn{background:var(--card);color:var(--fg);border:0;border-radius:10px;font-size:22px;width:44px;height:44px}h1{font-size:19px;margin:0}
-.mut{color:var(--mut);font-size:12.5px}h2{font-size:16px;margin:0 0 8px}h3{font-size:14px;margin:12px 0 6px;color:var(--mut)}
-nav{position:fixed;top:0;left:0;bottom:0;width:250px;background:var(--card);z-index:6;padding:14px 8px;display:flex;flex-direction:column;gap:4px;transform:translateX(-105%);transition:transform .2s;overflow-y:auto}
-nav.acik{transform:none}#perde{position:fixed;inset:0;background:#0008;z-index:5;display:none}#perde.acik{display:block}
-nav button{background:transparent;color:var(--fg);border:0;border-radius:10px;padding:12px;font-weight:600;text-align:left;font-size:15px}
-.secim{display:flex;gap:6px;margin:4px 0 8px}.secim button{flex:1;background:var(--in);color:var(--fg);border:0;border-radius:10px;padding:12px 6px;font-weight:700;font-size:15px}.secim button.on{background:var(--y);color:#422006}
-nav button.on{background:var(--g);color:#052e16}main{padding:4px 12px 60px;max-width:820px;margin:auto}
-.card{background:var(--card);border-radius:14px;padding:12px;margin:10px 0}
-.row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
-.stat{background:var(--in);border-radius:10px;padding:9px}.stat b{display:block;font-size:22px}
-label{display:block;font-size:12.5px;color:var(--mut);margin:6px 0 2px}
-input,select,textarea{width:100%;background:var(--in);color:var(--fg);border:1px solid #33503d;border-radius:9px;padding:9px;font:inherit}
-.f2{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}.f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 8px}
-button.btn,label.btn{background:var(--g);color:#052e16;border:0;border-radius:10px;padding:10px 14px;font-weight:700;font-size:14px;margin-top:10px}
-button.sec,label.sec{background:var(--in);color:var(--fg)}button.del{background:transparent;color:var(--r);border:0;font-size:13px;padding:4px}
-button.ed{background:transparent;color:var(--b);border:0;font-size:13px;padding:4px}
-table{width:100%;border-collapse:collapse;font-size:13.5px}th,td{padding:6px 4px;border-bottom:1px solid #2c4335;text-align:left}th{color:var(--mut);font-weight:600}
-td.n,th.n{text-align:right}.tag{display:inline-block;border-radius:7px;padding:1px 7px;font-size:12px;font-weight:700}
-.t-r{background:#7f1d1d;color:#fecaca}.t-y{background:#713f12;color:#fde68a}.t-g{background:#14532d;color:#bbf7d0}.t-b{background:#1e3a8a;color:#bfdbfe}
-.big{font-size:28px;font-weight:800}.price{color:var(--y)}.scroll{overflow-x:auto}
-.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--g);color:#052e16;padding:9px 16px;border-radius:10px;font-weight:700;display:none;z-index:9}
-svg text{fill:var(--mut);font-size:10px}
-</style></head><body>
-<header><button id="menuBtn" aria-label="Menü" onclick="document.getElementById('nav').classList.add('acik');document.getElementById('perde').classList.add('acik')">☰</button><div><h1 id="baslik">Sürü Takip</h1><div class="mut">🐑 Sürü Takip</div></div></header>
-<div id="perde" onclick="this.classList.remove('acik');document.getElementById('nav').classList.remove('acik')"></div>
-<nav id="nav"><div class="mut" style="padding:4px 10px 8px">🐑 Sürü Takip</div><button data-v="ozet" class="on">📊 Özet</button><button data-v="liste">🐑 Hayvanlar</button><button data-v="kuzu">🍼 Kuzulama</button><button data-v="yem">🌾 Saman/Ot/Yem</button><button data-v="maliyet">💰 Yem Maliyeti</button><button data-v="asi">💉 Aşılar</button><button data-v="ilac">💊 İlaç Maliyetleri</button><button data-v="vet">🩺 Veteriner</button><button data-v="fiyat">📈 Borsa</button><button data-v="ayar">💾 Yedekleme</button></nav>
-<main id="app"></main><div class="toast" id="toast"></div>
-<script src="app.js?v=11"></script>
+<html lang="tr"><head><meta charset="utf-8">
+<title>Sürü Takip taşındı</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="0; url=https://okira59.github.io/hayvan/">
+<link rel="canonical" href="https://okira59.github.io/hayvan/">
+<script>
+if ("serviceWorker" in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
+location.replace("https://okira59.github.io/hayvan/" + location.search + location.hash);
+</script>
+</head><body style="font-family:sans-serif;background:#0f172a;color:#e2e8f0;padding:24px">
+<p>Sürü Takip yeni adresine taşındı: <a href="https://okira59.github.io/hayvan/" style="color:#38bdf8">https://okira59.github.io/hayvan/</a></p>
 </body></html>
