@@ -1,5 +1,15 @@
 # Altın (XAU/USD) AL/SAT Sinyal Botu
 
+## Ayrı depolara taşınan projeler
+
+Aşağıdaki projeler bu depodan commit geçmişleriyle birlikte kendi depolarına taşındı:
+
+| Proje | Eski klasör | Yeni depo |
+|---|---|---|
+| Gol Analiz (iddaa/futbol veri toplama, kupon, skor olasılıkları) | `gol/` | https://github.com/Okira59/gol |
+| Hayvan borsa fiyatları (Edirne Ticaret Borsası) | `hayvan/` | https://github.com/Okira59/hayvan |
+| Spor Toto tahmin ve sistem kuponları | `toto/` | https://github.com/Okira59/toto |
+
 15 dakikalık ve 4 saatlik grafiklerde **Bollinger Bantları, EMA, MACD ve StochRSI** göstergelerini izler.
 8 kontrolün (4 gösterge × 2 zaman dilimi) **hepsi aynı yönü** gösterdiğinde sinyal üretir.
 
