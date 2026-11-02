@@ -1,5 +1,16 @@
 # Altın (XAU/USD) AL/SAT Sinyal Botu
 
+## Ayrı depolara taşınan projeler
+
+Aşağıdaki projeler bu depodan commit geçmişleriyle birlikte kendi depolarına taşındı; workflow'ları ve panelleri de oradadır.
+Eski panel adresleri (`/Pyhton/gol/`, `/Pyhton/toto/`, `/Pyhton/hayvan/`) yeni adreslere yönlendirir.
+
+| Proje | Eski klasör | Yeni depo | Panel |
+|---|---|---|---|
+| Gol Analiz (iddaa/futbol veri toplama, kupon, skor olasılıkları) | `gol/` | https://github.com/Okira59/gol | https://okira59.github.io/gol/ |
+| Hayvan borsa fiyatları (Edirne Ticaret Borsası) | `hayvan/` | https://github.com/Okira59/hayvan | https://okira59.github.io/hayvan/ |
+| Spor Toto tahmin ve sistem kuponları | `toto/` | https://github.com/Okira59/toto | https://okira59.github.io/toto/ |
+
 15 dakikalık ve 4 saatlik grafiklerde **Bollinger Bantları, EMA, MACD ve StochRSI** göstergelerini izler.
 8 kontrolün (4 gösterge × 2 zaman dilimi) **hepsi aynı yönü** gösterdiğinde sinyal üretir.
 
