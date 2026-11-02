@@ -1,28 +1,33 @@
 //+------------------------------------------------------------------+
-//| OkiraAltinSinyal.mq5                                             |
-//| Altın Sinyal botunun (bot.py) MT5 Expert Advisor sürümü.         |
-//| AL : 15dk EMA(20/50) + Bollinger(20,2) + MACD DEMA(12,26,9)      |
-//|      yukarı ve StochRSI(14,14,3,3) %K son 20 mumda 0,00'a değdi.  |
-//| SAT: tersi (%K 100,00'e değdi).                                  |
+//| OkiraDipTavan.mq5                                                |
+//| Dip-Tavan botunun (dip_tavan.py) MT5 Expert Advisor sürümü.      |
+//| 15dk, 30dk, 45dk, 1s: EMA(9/21), Bollinger(20,2), RSI(14),       |
+//| StochRSI(14,14,3,3), MACD DEMA(12,26,9), Hacim - son 5 mumda     |
+//| dip / tavan koşulları sayılır.                                   |
+//| AL : 15dk'da StochRSI (%K tam 0,00) dahil en az 3/6 dip ve       |
+//|      30dk/45dk/1s'den en az ikisinde en az 1 dip koşulu.         |
+//| SAT: tersi (%K tam 100,00).                                      |
 //| Çıkış: zarar durdur, +TrailStart pip kârda iz süren stop,        |
 //|        ters sinyalde kapat ve ters yönde aç. Sabit kâr al yok.   |
 //+------------------------------------------------------------------+
 #property copyright "Okira59"
 #property version   "1.00"
-#property description "XAUUSD 15dk: EMA + Bollinger + MACD DEMA + StochRSI 0/100, iz süren stop"
+#property description "XAUUSD Dip-Tavan: 15dk/30dk/45dk/1s, StochRSI 0/100 şartı, iz süren stop"
 
 input double InpLots          = 0.01;   // Lot (çoğu aracı kurumda 0.01 lot = 1 pip başına $1)
 input double InpSlPips        = 25;     // Zarar durdur (pip)
-input double InpTrailStart    = 20;     // İz süren stop başlangıcı (pip kâr)
-input double InpTrailGap      = 10;     // İz süren stop mesafesi (pip)
+input double InpTrailStart    = 30;     // İz süren stop başlangıcı (pip kâr)
+input double InpTrailGap      = 15;     // İz süren stop mesafesi (pip)
 input double InpTrailStep     = 0.2;    // Stop en az bu kadar ilerleyince güncellenir (pip)
 input double InpPipSize       = 1.0;    // 1 pip = fiyat birimi (altın: 1.0 = $1)
-input int    InpStochLookback = 20;     // StochRSI 0/100 değme penceresi (15dk mum)
-input int    InpBars          = 1500;   // Hesaplamada kullanılan 15dk mum sayısı
+input int    InpLookback      = 5;      // Dip/tavan koşulları son kaç mumda aranır
+input int    InpMinScore15    = 3;      // 15dk'da en az kaç koşul (StochRSI dahil)
+input int    InpMinScoreHigh  = 1;      // 30dk/45dk/1s'den en az ikisinde en az kaç koşul
+input int    InpBars          = 3000;   // Hesaplamada kullanılan 15dk mum sayısı
 input bool   InpAllowBuy      = true;   // AL işlemleri açılsın
 input bool   InpAllowSell     = true;   // SAT işlemleri açılsın
 input bool   InpNotify        = true;   // MT5 mobil bildirimi gönder
-input ulong  InpMagic         = 590059; // Magic number
+input ulong  InpMagic         = 590060; // Magic number
 input int    InpSlippage      = 30;     // İzin verilen kayma (point)
 
 #define NA EMPTY_VALUE
@@ -87,10 +92,9 @@ void Rsi(const double &c[], int n, int p, double &out[])
      }
   }
 
-void StochK(const double &c[], int n, int rp, int sp, int ks, double &k[])
+void StochK(const double &r[], int n, int sp, int ks, double &k[])
   {
-   double r[], raw[];
-   Rsi(c, n, rp, r);
+   double raw[];
    ArrayResize(raw, n);
    ArrayResize(k, n);
    for(int i = 0; i < n; i++)
@@ -122,35 +126,157 @@ void StochK(const double &c[], int n, int rp, int sp, int ks, double &k[])
      }
   }
 
-int Dir(bool bull, bool bear) { return (bull ? 1 : 0) - (bear ? 1 : 0); }
-
-//--- i. mumdaki sinyal: +1 AL, -1 SAT, 0 yok
-int SignalAt(int i, const double &c[], const double &ef[], const double &es[],
-             const double &ml[], const double &ms[], const double &k[])
+void Sma(const double &x[], int n, int p, double &out[])
   {
-   int bp = 20;
-   if(i < bp - 1) return 0;
-   double sum = 0, sq = 0;
-   for(int j = i - bp + 1; j <= i; j++) sum += c[j];
-   double mid = sum / bp;
-   for(int j = i - bp + 1; j <= i; j++) sq += (c[j] - mid) * (c[j] - mid);
-   double dev = MathSqrt(sq / bp);
-   double up = mid + 2.0 * dev, lo = mid - 2.0 * dev, C = c[i];
-
-   int e  = Dir(ef[i] > es[i] && C > ef[i], ef[i] < es[i] && C < ef[i]);
-   int b  = Dir(C > mid && C < up, C < mid && C > lo);
-   int m  = Dir(ml[i] > ms[i], ml[i] < ms[i]);
-   int st = 0;
-   for(int j = i; j > i - InpStochLookback && j >= 0; j--)
+   ArrayResize(out, n);
+   double s = 0;
+   for(int i = 0; i < n; i++)
      {
-      if(k[j] == NA) continue;
-      if(k[j] < 0.005)    { st = 1;  break; }   // %K = 0,00
-      if(k[j] >= 99.995)  { st = -1; break; }   // %K = 100,00
+      s += x[i];
+      if(i >= p) s -= x[i - p];
+      out[i] = i >= p - 1 ? s / p : NA;
      }
-   int t = e + b + m;
-   if(t == 3 && st == 1)   return 1;
-   if(t == -3 && st == -1) return -1;
-   return 0;
+  }
+
+//--- her mum için dip / tavan koşul sayısı (0-6) ve StochRSI koşulu
+void Scores(const double &h[], const double &l[], const double &c[], const double &v[], int n,
+            int &dipN[], int &topN[], bool &dipSt[], bool &topSt[])
+  {
+   int w = InpLookback;
+   double ef[], es[], mid[], r[], k[], f[], s[], ml[], ms[], vm[];
+   Ema(c, n, 9, ef);
+   Ema(c, n, 21, es);
+   Sma(c, n, 20, mid);
+   Rsi(c, n, 14, r);
+   StochK(r, n, 14, 3, k);
+   Dema(c, n, 12, f);
+   Dema(c, n, 26, s);
+   ArrayResize(ml, n);
+   for(int i = 0; i < n; i++) ml[i] = f[i] - s[i];
+   Dema(ml, n, 9, ms);
+   Sma(v, n, 20, vm);
+   double up[], lo[];
+   ArrayResize(up, n);
+   ArrayResize(lo, n);
+   for(int i = 0; i < n; i++)
+     {
+      up[i] = NA; lo[i] = NA;
+      if(mid[i] == NA) continue;
+      double sq = 0;
+      for(int j = i - 19; j <= i; j++) sq += (c[j] - mid[i]) * (c[j] - mid[i]);
+      double dev = MathSqrt(sq / 20.0);
+      up[i] = mid[i] + 2.0 * dev;
+      lo[i] = mid[i] - 2.0 * dev;
+     }
+   ArrayResize(dipN, n); ArrayResize(topN, n); ArrayResize(dipSt, n); ArrayResize(topSt, n);
+   for(int i = 0; i < n; i++)
+     {
+      bool bbD = false, bbT = false, stD = false, stT = false, vol = false, rOk = (i >= w - 1);
+      double rMin = DBL_MAX, rMax = -DBL_MAX;
+      if(i >= w - 1)
+         for(int j = i - w + 1; j <= i; j++)
+           {
+            if(lo[j] != NA && l[j] <= lo[j]) bbD = true;
+            if(up[j] != NA && h[j] >= up[j]) bbT = true;
+            if(k[j] != NA && k[j] < 0.005)   stD = true;   // %K = 0,00
+            if(k[j] != NA && k[j] >= 99.995) stT = true;   // %K = 100,00
+            if(vm[j] != NA && v[j] > 1.5 * vm[j]) vol = true;
+            if(r[j] == NA) rOk = false;
+            else { rMin = MathMin(rMin, r[j]); rMax = MathMax(rMax, r[j]); }
+           }
+      bool rUp = i >= 1 && r[i] != NA && r[i - 1] != NA && r[i] > r[i - 1];
+      bool rDn = i >= 1 && r[i] != NA && r[i - 1] != NA && r[i] < r[i - 1];
+      double hi = ml[i] - ms[i], hp = i >= 1 ? ml[i - 1] - ms[i - 1] : 0;
+      bool mD = i >= 1 && hi < 0 && hi > hp;
+      bool mT = i >= 1 && hi > 0 && hi < hp;
+      bool eD = c[i] > ef[i] && ef[i] < es[i];
+      bool eT = c[i] < ef[i] && ef[i] > es[i];
+      dipN[i] = (int)bbD + (int)(rOk && rMin < 35 && rUp) + (int)stD + (int)mD + (int)eD + (int)vol;
+      topN[i] = (int)bbT + (int)(rOk && rMax > 65 && rDn) + (int)stT + (int)mT + (int)eT + (int)vol;
+      dipSt[i] = stD;
+      topSt[i] = stT;
+     }
+  }
+
+//--- 15dk mumlarından üst zaman dilimi (gün başına hizalı, UTC) üretir
+int Resample(const MqlRates &rt[], const long &utc[], int n, int minutes,
+             double &h[], double &l[], double &c[], double &v[], long &closeT[])
+  {
+   long sec = minutes * 60, cur = -1;
+   int m = -1;
+   ArrayResize(h, n); ArrayResize(l, n); ArrayResize(c, n); ArrayResize(v, n); ArrayResize(closeT, n);
+   for(int i = 0; i < n; i++)
+     {
+      long day = utc[i] - utc[i] % 86400;
+      long b = day + ((utc[i] - day) / sec) * sec;
+      if(b != cur)
+        {
+         m++; cur = b;
+         h[m] = rt[i].high; l[m] = rt[i].low; v[m] = 0; closeT[m] = b + sec;
+        }
+      h[m] = MathMax(h[m], rt[i].high);
+      l[m] = MathMin(l[m], rt[i].low);
+      c[m] = rt[i].close;
+      v[m] += (double)rt[i].tick_volume;
+     }
+   return m + 1;
+  }
+
+//--- kapanmış 15dk mumlarda sinyal dizisi (+1 dip/AL, -1 tavan/SAT, 0 yok)
+bool Signals(int &sig[], int &n15, string &info)
+  {
+   MqlRates rt[];
+   ArraySetAsSeries(rt, false);
+   int n = CopyRates(_Symbol, PERIOD_M15, 1, InpBars, rt);   // kapanmış mumlar, rt[0] en eski
+   if(n < 500) return false;
+   long off = (long)(TimeTradeServer() - TimeGMT());
+   off = (long)MathRound(off / 900.0) * 900;                // sunucu saati - UTC
+   long utc[];
+   ArrayResize(utc, n);
+   double h[], l[], c[], v[];
+   ArrayResize(h, n); ArrayResize(l, n); ArrayResize(c, n); ArrayResize(v, n);
+   for(int i = 0; i < n; i++)
+     {
+      utc[i] = (long)rt[i].time - off;
+      h[i] = rt[i].high; l[i] = rt[i].low; c[i] = rt[i].close; v[i] = (double)rt[i].tick_volume;
+     }
+   int dN[], tN[];
+   bool dS[], tS[];
+   Scores(h, l, c, v, n, dN, tN, dS, tS);
+
+   int okD[], okT[], have[];
+   ArrayResize(okD, n); ArrayResize(okT, n); ArrayResize(have, n);
+   ArrayInitialize(okD, 0); ArrayInitialize(okT, 0); ArrayInitialize(have, 0);
+   int mins[3] = {30, 45, 60};
+   for(int f = 0; f < 3; f++)
+     {
+      double H[], L[], C[], V[];
+      long ct[];
+      int m = Resample(rt, utc, n, mins[f], H, L, C, V, ct);
+      int a[], b[];
+      bool x[], y[];
+      Scores(H, L, C, V, m, a, b, x, y);
+      int p = -1;
+      for(int i = 0; i < n; i++)
+        {
+         long T = utc[i] + 900;                              // 15dk mumun kapanışı
+         while(p + 1 < m && ct[p + 1] <= T) p++;            // yalnızca kapanmış üst mum
+         if(p < 0) continue;
+         have[i]++;
+         if(a[p] >= InpMinScoreHigh) okD[i]++;
+         if(b[p] >= InpMinScoreHigh) okT[i]++;
+        }
+     }
+   ArrayResize(sig, n);
+   for(int i = 0; i < n; i++)
+     {
+      bool dip = have[i] == 3 && dN[i] >= InpMinScore15 && dS[i] && okD[i] >= 2;
+      bool top = have[i] == 3 && tN[i] >= InpMinScore15 && tS[i] && okT[i] >= 2;
+      sig[i] = (dip ? 1 : 0) - (top ? 1 : 0);
+     }
+   n15 = n;
+   info = StringFormat("15dk dip %d/6 tavan %d/6", dN[n - 1], tN[n - 1]);
+   return true;
   }
 
 //--- pozisyon yardımcıları
@@ -195,7 +321,7 @@ void Notify(string msg)
       SendNotification(msg);
   }
 
-void Open(int dir)
+void Open(int dir, string info)
   {
    if((dir == 1 && !InpAllowBuy) || (dir == -1 && !InpAllowSell)) return;
    double price = dir == 1 ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -207,10 +333,11 @@ void Open(int dir)
    rq.type    = dir == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
    rq.price   = price;
    rq.sl      = sl;
-   rq.comment = dir == 1 ? "Altin Sinyal AL" : "Altin Sinyal SAT";
+   rq.comment = dir == 1 ? "Dip-Tavan AL" : "Dip-Tavan SAT";
    if(Send(rq, rs, "Açılış"))
-      Notify(StringFormat("%s %s @ %s · Zarar durdur %s (-%g pip)", dir == 1 ? "AL" : "SAT", _Symbol,
-                          DoubleToString(rs.price > 0 ? rs.price : price, _Digits), DoubleToString(sl, _Digits), InpSlPips));
+      Notify(StringFormat("Dip-Tavan %s %s @ %s · Zarar durdur %s (-%g pip) · %s", dir == 1 ? "DİP AL" : "TAVAN SAT",
+                          _Symbol, DoubleToString(rs.price > 0 ? rs.price : price, _Digits),
+                          DoubleToString(sl, _Digits), InpSlPips, info));
   }
 
 //--- iz süren stop: kâr >= TrailStart olunca stop = fiyat - TrailGap (yalnızca ileri)
@@ -240,7 +367,7 @@ void ManageTrailing()
       rq.sl       = newSl;
       rq.tp       = PositionGetDouble(POSITION_TP);
       if(Send(rq, rs, "Stop güncelleme") && first)
-         Notify(StringFormat("İz süren stop devrede: %s %s · kâr %+.1f pip · stop %s",
+         Notify(StringFormat("Dip-Tavan iz süren stop devrede: %s %s · kâr %+.1f pip · stop %s",
                              dir == 1 ? "AL" : "SAT", _Symbol, pips, DoubleToString(newSl, _Digits)));
      }
   }
@@ -250,7 +377,7 @@ int OnInit()
   {
    if(StringFind(_Symbol, "XAU") < 0 && StringFind(_Symbol, "GOLD") < 0)
       Print("Uyarı: Bu EA altın (XAUUSD) için ayarlandı. Şu anki sembol: ", _Symbol);
-   Print("Okira Altın Sinyal EA başladı · ", _Symbol, " · lot ", InpLots, " · stop ", InpSlPips,
+   Print("Okira Dip-Tavan EA başladı · ", _Symbol, " · lot ", InpLots, " · stop ", InpSlPips,
          " pip · iz süren stop +", InpTrailStart, "/", InpTrailGap, " pip");
    return INIT_SUCCEEDED;
   }
@@ -262,33 +389,22 @@ void OnTick()
    datetime bar = iTime(_Symbol, PERIOD_M15, 0);
    if(bar == 0 || bar == g_lastBar) return;
 
-   double c[];
-   int n = CopyClose(_Symbol, PERIOD_M15, 1, InpBars, c);   // kapanmış mumlar, c[0] en eski
-   if(n < 300) return;                                      // geçmiş veri henüz yüklenmedi
+   int sig[], n = 0;
+   string info;
+   if(!Signals(sig, n, info)) return;                       // geçmiş veri henüz yüklenmedi
    g_lastBar = bar;
 
-   double ef[], es[], f[], s[], ml[], ms[], k[];
-   Ema(c, n, 20, ef);
-   Ema(c, n, 50, es);
-   Dema(c, n, 12, f);
-   Dema(c, n, 26, s);
-   ArrayResize(ml, n);
-   for(int i = 0; i < n; i++) ml[i] = f[i] - s[i];
-   Dema(ml, n, 9, ms);
-   StochK(c, n, 14, 14, 3, k);
-
-   int now  = SignalAt(n - 1, c, ef, es, ml, ms, k);
-   int prev = SignalAt(n - 2, c, ef, es, ml, ms, k);
+   int now = sig[n - 1], prev = sig[n - 2];
    if(now == 0 || now == prev) return;                      // yalnızca yeni sinyal
 
    int cur = CurrentDir();
    if(cur == now) return;
    if(cur != 0)
      {
-      Notify(StringFormat("Ters sinyal: %s işlemi kapatılıyor", cur == 1 ? "AL" : "SAT"));
+      Notify(StringFormat("Dip-Tavan ters sinyal: %s işlemi kapatılıyor", cur == 1 ? "AL" : "SAT"));
       CloseAll();
      }
-   Open(now);
+   Open(now, info);
   }
 
 void OnTradeTransaction(const MqlTradeTransaction &tr, const MqlTradeRequest &rq, const MqlTradeResult &rs)
@@ -300,7 +416,7 @@ void OnTradeTransaction(const MqlTradeTransaction &tr, const MqlTradeRequest &rq
    double p = HistoryDealGetDouble(tr.deal, DEAL_PROFIT) + HistoryDealGetDouble(tr.deal, DEAL_SWAP)
               + HistoryDealGetDouble(tr.deal, DEAL_COMMISSION);
    string why = HistoryDealGetInteger(tr.deal, DEAL_REASON) == DEAL_REASON_SL ? "stop" : "ters sinyal / elle";
-   Notify(StringFormat("İşlem kapandı (%s) @ %s · %+.2f %s", why,
+   Notify(StringFormat("Dip-Tavan işlem kapandı (%s) @ %s · %+.2f %s", why,
                        DoubleToString(HistoryDealGetDouble(tr.deal, DEAL_PRICE), _Digits),
                        p, AccountInfoString(ACCOUNT_CURRENCY)));
   }
