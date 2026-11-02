@@ -36,7 +36,7 @@ STOCH_LOOKBACK = int(os.getenv("STOCH_LOOKBACK", "20"))
 TREND_INDICATORS = ["EMA", "BOLLINGER", "MACD"]
 # Çıkış: sabit kâr al yok; -SL_PIPS zarar durdur, kâr TRAIL_START pip olunca stop
 # zirve kârın TRAIL_GAP pip gerisinden takip eder; ters sinyal işlemi kapatıp çevirir.
-SL_PIPS = float(os.getenv("SL_PIPS", "25"))
+SL_PIPS = float(os.getenv("SL_PIPS", "15"))
 TRAIL_START = float(os.getenv("TRAIL_START", "20"))
 TRAIL_GAP = float(os.getenv("TRAIL_GAP", "10"))
 PIP_SIZE = float(os.getenv("PIP_SIZE", "1.0"))  # altında 1 pip = 1 $ (20 pip = 20 $)
