@@ -5,7 +5,7 @@
 - **Göstergeler (her zaman diliminde, son 5 mum):** EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD DEMA(12,26,9), hacim (tick hacmi > 20 mum ortalamasının 1,5 katı).
 - **AL (dip):** 15dk'da StochRSI %K tam 0,00 dahil en az 3/6 dip koşulu; 30dk, 45dk ve 1s'ten en az ikisinde en az 1 dip koşulu.
 - **SAT (tavan):** tersi; %K tam 100,00.
-- **Çıkış:** zarar durdur 25 pip; kâr +30 pip olunca iz süren stop (15 pip geriden); ters sinyalde kapat ve ters yönde aç. Sabit kâr al yok.
+- **Çıkış:** zarar durdur 25 pip; kâr +20 pip olunca iz süren stop (10 pip geriden); ters sinyalde kapat ve ters yönde aç. Sabit kâr al yok.
 - Karar kapanmış 15dk mumda verilir; EA hangi zaman diliminde açılırsa açılsın 15dk veriyi kullanır. 30dk/45dk/1s mumları 15dk mumlarından UTC gün başına hizalanarak üretilir (Telegram botuyla aynı).
 
 ## Kurulum
@@ -24,7 +24,7 @@ Bilgisayar/MT5 kapalıyken EA çalışmaz; 7/24 için VPS (ör. MT5 içindeki MQ
 |---|---|---|
 | InpLots | 0.01 | Lot. Çoğu kurumda 0.01 lot XAUUSD = 1 pip ($1 hareket) başına ~$1 |
 | InpSlPips | 25 | Zarar durdur (pip) |
-| InpTrailStart / InpTrailGap | 30 / 15 | İz süren stop başlangıcı / mesafesi (pip) |
+| InpTrailStart / InpTrailGap | 20 / 10 | İz süren stop başlangıcı / mesafesi (pip) |
 | InpPipSize | 1.0 | 1 pip = 1.0 fiyat ($1). Sembol ölçeği farklıysa değiştirin |
 | InpLookback | 5 | Dip/tavan koşullarının arandığı mum sayısı |
 | InpMinScore15 / InpMinScoreHigh | 3 / 1 | 15dk ve üst zaman dilimleri için en az koşul sayısı |

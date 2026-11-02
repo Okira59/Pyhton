@@ -16,8 +16,8 @@
 
 input double InpLots          = 0.01;   // Lot (çoğu aracı kurumda 0.01 lot = 1 pip başına $1)
 input double InpSlPips        = 25;     // Zarar durdur (pip)
-input double InpTrailStart    = 30;     // İz süren stop başlangıcı (pip kâr)
-input double InpTrailGap      = 15;     // İz süren stop mesafesi (pip)
+input double InpTrailStart    = 20;     // İz süren stop başlangıcı (pip kâr)
+input double InpTrailGap      = 10;     // İz süren stop mesafesi (pip)
 input double InpTrailStep     = 0.2;    // Stop en az bu kadar ilerleyince güncellenir (pip)
 input double InpPipSize       = 1.0;    // 1 pip = fiyat birimi (altın: 1.0 = $1)
 input int    InpLookback      = 5;      // Dip/tavan koşulları son kaç mumda aranır

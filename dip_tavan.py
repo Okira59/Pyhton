@@ -27,8 +27,8 @@ REQUIRED_15M = "STOCHRSI"  # ...ve bunlardan biri StochRSI (son 5 mumda tam 0 / 
 MIN_SCORE_HIGHER = 1    # 30dk/45dk/1s'den en az ikisinde en az 1 gösterge onaylamalı
 
 SL_PIPS = float(os.getenv("SL_PIPS", "25"))  # zarar durdur
-TRAIL_START = float(os.getenv("TRAIL_START", "30"))  # bu kâra ulaşınca iz süren stop başlar
-TRAIL_GAP = float(os.getenv("TRAIL_GAP", "15"))      # zirve kârın bu kadar gerisinden takip
+TRAIL_START = float(os.getenv("TRAIL_START", "20"))  # bu kâra ulaşınca iz süren stop başlar
+TRAIL_GAP = float(os.getenv("TRAIL_GAP", "10"))      # zirve kârın bu kadar gerisinden takip
 PIP_SIZE = float(os.getenv("PIP_SIZE", "1.0"))  # altında 1 pip = 1 $
 
 STATE_FILE = os.getenv("STATE_FILE", "dip_tavan_state.json")
