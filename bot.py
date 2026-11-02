@@ -289,8 +289,10 @@ def position_line(pos, price: float) -> str:
     pct = pos["dir"] * (price - pos["entry"]) / pos["entry"] * 100
     pips = pos["dir"] * (price - pos["entry"]) / PIP_SIZE
     side = "🟢 AL" if pos["dir"] == 1 else "🔴 SAT"
+    stop = (f"\n{'🔒 İz süren stop' if pos.get('trail') else 'Zarar durdur'}: {pos['sl']:.2f}"
+            if "sl" in pos else "")
     return (f"Açık işlem: {side} @ {pos['entry']:.2f}\n"
-            f"Anlık {'kâr' if pct >= 0 else 'zarar'}: {pct:+.2f}%  ({pips:+.1f} pip)")
+            f"Anlık {'kâr' if pct >= 0 else 'zarar'}: {pct:+.2f}%  ({pips:+.1f} pip){stop}")
 
 
 def _target(direction: int, entry: float) -> float:
