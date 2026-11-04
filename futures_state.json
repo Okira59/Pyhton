@@ -33,17 +33,6 @@
    "margin": 20.0,
    "time": "2026-11-03T16:45:00+00:00"
   },
-  "QNTUSDT": {
-   "dir": -1,
-   "entry": 191.83,
-   "act": 187.9934,
-   "sl": 188.10995,
-   "peak": 185.33,
-   "trail": true,
-   "dp": 2,
-   "margin": 20.0,
-   "time": "2026-11-03T18:50:00+00:00"
-  },
   "APTUSDT": {
    "dir": -1,
    "entry": 0.6036,
@@ -2753,6 +2742,18 @@
    "dp": 5,
    "dir": -1,
    "price": 0.01997
+  },
+  {
+   "t": 1793762656,
+   "kind": "KAPAT",
+   "sym": "QNTUSDT",
+   "dp": 2,
+   "dir": -1,
+   "entry": 191.83,
+   "exit": 188.10995,
+   "pct": 19.39,
+   "reason": "\u0130z s\u00fcren stop (zirve k\u00e2r +%33.9) \u00b7 anl\u0131k fiyat 188.73",
+   "usd": 3.88
   }
  ],
  "last_status": "2026-11-04T03:00:00+00:00",
@@ -2764,10 +2765,10 @@
    "limit": 1,
    "limit_long": 0,
    "limit_short": 1,
-   "closed": 8,
-   "wins": 7,
+   "closed": 9,
+   "wins": 8,
    "losses": 1,
-   "usd": 17.75,
+   "usd": 21.63,
    "trail": 10
   }
  }
