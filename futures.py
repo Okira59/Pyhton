@@ -1,10 +1,10 @@
 """Bitget USDT vadeli (futures) 10x simülasyon botu – hacmi en yüksek coinler.
 
 Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinleri) tarar.
-5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI (0/100), MACD DEMA ve
-Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
-onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
-zarar %20'ye ulaşınca işlem kapatılır; kâr %20'yi geçince iz süren stop devreye girer. Her işlem isolated $20
+5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI (0/100), MACD DEMA,
+Hacim, Lorentzian Classification ve SuperTrend AI göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal
++ üst zaman dilimlerinde onay + 1s'te Lorentzian ve SuperTrend AI aynı yönde olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
+zarar %20'ye ulaşınca işlem kapatılır; kâr %20'yi geçince kademeli iz süren stop devreye girer. Her işlem isolated $20
 teminatla açılır; aynı anda en fazla 10 işlem açık olur (doluyken sinyal bildirilir,
 işlem açılmaz; aynı anda gelen sinyallerden puanı en yüksek olanlar önce açılır). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
@@ -13,7 +13,7 @@ import argparse
 import json
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
 import requests
@@ -21,7 +21,7 @@ import requests
 import bot
 import dashboard
 from bot import _closed_only, send_telegram, status_due
-from indicators import bollinger, ema, macd_dema, rsi, stoch_buy, stoch_rsi, stoch_sell
+from indicators import bollinger, ema, lorentzian, macd_dema, rsi, stoch_buy, stoch_rsi, stoch_sell, supertrend_ai
 
 # ---------------------------------------------------------------- AYARLAR ---
 TOP_N = int(os.getenv("TOP_N", "200"))
@@ -34,14 +34,16 @@ BB_PERIOD, BB_STD = 20, 2.0
 RSI_PERIOD = 14
 VOLUME_PERIOD = 20
 
-MIN_SCORE_5M = int(os.getenv("MIN_SCORE_5M", "5"))         # 5dk'da 6 göstergeden en az bu kadarı aynı yönde
-MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "4"))  # üst zaman diliminde onay puanı
+MIN_SCORE_5M = int(os.getenv("MIN_SCORE_5M", "6"))         # 5dk'da 8 göstergeden en az bu kadarı aynı yönde
+MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "5"))  # üst zaman diliminde onay puanı
 MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman diliminden en az bu kadarı onaylamalı
 
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
 SL_ROE = float(os.getenv("SL_ROE", "20"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %2)
 TRAIL_START_ROE = float(os.getenv("TRAIL_START_ROE", "20"))  # kâr bu ROE'ye ulaşınca iz süren stop başlar
-TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden izler
+TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden başlar
+TRAIL_STEP = float(os.getenv("TRAIL_STEP", "0.5"))           # kâr her 1 ROE arttıkça takip mesafesi bu kadar daralır
+TRAIL_MIN_ROE = float(os.getenv("TRAIL_MIN_ROE", "3"))       # en dar takip mesafesi (ROE)
 MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
 MAX_OPEN = int(os.getenv("MAX_OPEN", "10"))  # aynı anda en fazla açık işlem
 MAX_SAME_DIR = int(os.getenv("MAX_SAME_DIR", "0")) or MAX_OPEN  # bir yönde en fazla açık işlem (0 = yön limiti yok)
@@ -53,7 +55,8 @@ MAX_HISTORY = 300
 # ----------------------------------------------------------------------------
 
 API = "https://api.bitget.com/api/v2/mix/market/"
-CHECKS = ["EMA", "BOLLINGER", "RSI", "STOCHRSI", "MACD", "HACIM"]
+CHECKS = ["EMA", "BOLLINGER", "RSI", "STOCHRSI", "MACD", "HACIM", "LORENTZIAN", "SUPERTREND"]
+REQUIRED_TF, REQUIRED_CHECKS = "1s", ["LORENTZIAN", "SUPERTREND"]  # 1s'te bu ikisi sinyal yönünde olmalı
 TF_5M = pd.Timedelta(minutes=5)
 AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
 
@@ -119,6 +122,8 @@ def directions(df: pd.DataFrame) -> pd.DataFrame:
     k, _ = stoch_rsi(c)
     m, sig, _ = macd_dema(c)
     vol_hi = v > v.rolling(VOLUME_PERIOD).mean()
+    lor, _, _ = lorentzian(df)
+    st, _, _ = supertrend_ai(df)
 
     def dirn(bull, bear):
         return bull.astype(int) - bear.astype(int)
@@ -130,6 +135,8 @@ def directions(df: pd.DataFrame) -> pd.DataFrame:
         "STOCHRSI": dirn(stoch_buy(k), stoch_sell(k)),
         "MACD": dirn(m > sig, m < sig),
         "HACIM": dirn(vol_hi & (c > o), vol_hi & (c < o)),
+        "LORENTZIAN": lor.astype(int),
+        "SUPERTREND": st.astype(int),
     }, index=df.index)
     out["score"] = out[CHECKS].sum(axis=1)
     return out
@@ -151,6 +158,9 @@ def build(frames: dict, min5=None, minh=None, ntf=None) -> pd.DataFrame:
     hs = base[[f"score_{n}" for n in HIGHER]]
     long_ = (base["score_5dk"] >= min5) & (hs.ge(minh).sum(axis=1) >= ntf)
     short = (base["score_5dk"] <= -min5) & (hs.le(-minh).sum(axis=1) >= ntf)
+    for c in REQUIRED_CHECKS:
+        long_ &= base[f"{c}_{REQUIRED_TF}"] == 1
+        short &= base[f"{c}_{REQUIRED_TF}"] == -1
     sig = long_.astype(int) - short.astype(int)
     base["signal"] = sig
     base["new_signal"] = sig.where((sig != 0) & (sig != sig.shift()), 0)
@@ -163,8 +173,14 @@ def levels(direction: int, entry: float):
             entry * (1 - direction * SL_ROE / LEVERAGE / 100))
 
 
-def trail_stop(direction: int, peak: float) -> float:
-    return peak * (1 - direction * TRAIL_GAP_ROE / LEVERAGE / 100)
+def trail_gap(peak_roe: float) -> float:
+    """Kademeli takip: kâr arttıkça mesafe daralır (en az TRAIL_MIN_ROE)."""
+    return max(TRAIL_MIN_ROE, TRAIL_GAP_ROE - TRAIL_STEP * (peak_roe - TRAIL_START_ROE))
+
+
+def trail_stop(direction: int, entry: float, peak: float) -> float:
+    r = roe(direction, entry, peak)
+    return entry * (1 + direction * (r - trail_gap(r)) / LEVERAGE / 100)
 
 
 def roe(direction: int, entry: float, price: float) -> float:
@@ -192,11 +208,12 @@ def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
              f"Zarar durdur (-%{SL_ROE:g} = -${usd(SL_ROE):.2f}): {sl:.{dp}f}",
              f"🛑 Girişte Bitget'e stop emri koyun: {sl:.{dp}f}",
              f"İz süren stop: kâr +%{TRAIL_START_ROE:g} (+${usd(TRAIL_START_ROE):.2f}) olunca devreye girer: {act:.{dp}f}",
-             f"Sabit hedef yok; stop en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip eder.",
+             f"Sabit hedef yok; kademeli takip: stop en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden başlar, "
+             f"kâr her %{1 / TRAIL_STEP:g} arttıkça mesafe 1 puan daralır (en az %{TRAIL_MIN_ROE:g}).",
              f"💡 Limit emirle girin ({row['Close']:.{dp}f}); piyasa emrine göre ücret ~%60 daha düşük.", ""]
     for n in TIMEFRAMES:
         agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == d]
-        lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/6  {', '.join(agree) if agree else '-'}")
+        lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/{len(CHECKS)}  {', '.join(agree) if agree else '-'}")
     lines += ["", "👉 Kontrol edin, girmek isteyen varsa girebilir."]
     return "\n".join(lines)
 
@@ -235,7 +252,7 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
                 peak = max(pos.get("peak", pos["entry"]), row["High"]) if d == 1 else min(pos.get("peak", pos["entry"]), row["Low"])
                 pos["peak"] = float(peak)
                 if roe(d, pos["entry"], peak) >= TRAIL_START_ROE:
-                    ts = trail_stop(d, peak)
+                    ts = trail_stop(d, pos["entry"], peak)
                     if (ts > sl) if d == 1 else (ts < sl):
                         pos["sl"] = float(ts)
                     if not pos.get("trail"):
@@ -245,7 +262,7 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
                                        f"🔒 FUTURES – {_coin(sym)} İZ SÜREN STOP DEVREDE ({_side(d)} {LEVERAGE:g}x)\n"
                                        f"Kâr +%{roe(d, pos['entry'], peak):.1f} ROE'ye ulaştı.\n"
                                        f"Yeni stop: {pos['sl']:.{dp}f} (en az {r:+.1f}% = {usd(r, pos.get('margin', MARGIN_USD)):+.2f}$ kilitli)\n"
-                                       f"Stop, en yüksek kârın %{TRAIL_GAP_ROE:g} ROE gerisinden takip ediyor.",
+                                       f"Kademeli takip: şu an zirvenin %{trail_gap(roe(d, pos['entry'], peak)):.1f} ROE gerisinde; kâr arttıkça daralır (en az %{TRAIL_MIN_ROE:g}).",
                                        {"sym": sym, "dp": dp, "dir": d, "sl": pos["sl"]}))
             if exit_price is not None:
                 events.append(_close_event(sym, dp, pos, row, exit_price, reason))
@@ -409,7 +426,7 @@ def check_and_notify(send: bool = True):
     places = price_places()
     # açık işlemi olan coinler önce işlenir: kapanışlar yeni işlemlere yer açsın
     symbols = list(state["positions"]) + [s for s, _ in top if s not in state["positions"]]
-    with ThreadPoolExecutor(WORKERS) as ex:
+    with ProcessPoolExecutor(WORKERS) as ex:
         results = {s: d for s, d in zip(symbols, ex.map(_scan_one, symbols)) if d is not None and len(d)}
     print(f"{len(results)}/{len(symbols)} coin tarandı.")
 
@@ -508,6 +525,10 @@ def export_dashboard(results: dict, top: list, places: dict, state: dict):
         "leverage": LEVERAGE,
         "trail_start_roe": TRAIL_START_ROE,
         "trail_gap_roe": TRAIL_GAP_ROE,
+        "trail_step": TRAIL_STEP,
+        "trail_min_roe": TRAIL_MIN_ROE,
+        "required_tf": REQUIRED_TF,
+        "required_checks": REQUIRED_CHECKS,
         "sl_roe": SL_ROE,
         "margin_usd": MARGIN_USD,
         "max_open": MAX_OPEN,
