@@ -66,8 +66,8 @@ GitHub zamanlanmış işleri bazen birkaç dakika gecikmeli çalıştırabilir.
 
 ## İkinci bot: Dip-Tavan (dip_tavan.py)
 15dk, 30dk, 45dk ve 1s grafiklerde EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD(12,26,9) ve Hacim(20)
-ile dip (🟢 AL) ve tavan (🔴 SAT) arar (koşullar son 5 mumda). Sinyal için: 15dk'da StochRSI (tam 0 / 100) dahil 6 koşuldan en az 3'ü, 30dk/45dk/1s'den en az ikisinde en az 1 koşul. Çıkış: -25 pip zarar durdur, kâr +20 pip olunca zirvenin 10 pip gerisinden iz süren stop, ters sinyalde çevirme (sabit kâr al yok).
-Kapanış mesajında sebep, pip ve kâr/zarar yüzdesi yazar. Ayarlar: `SL_PIPS`, `TRAIL_START`, `TRAIL_GAP`, `PIP_SIZE`.
+ile dip (🟢 AL) ve tavan (🔴 SAT) arar (koşullar son 5 mumda). Sinyal için: 15dk'da StochRSI (tam 0 / 100) dahil 6 koşuldan en az 3'ü, 30dk/45dk/1s'den en az ikisinde en az 1 koşul. Çıkış: -25 pip zarar durdur; kâr +20 pip olunca kademeli iz süren stop (15 pip geriden başlar, kâr her 2 pip arttıkça 1 pip daralır, en az 3); zarar -15 pip olunca kademeli zarar koruma (fiyat dipten 15 pip toparlanırsa kapanır, zarar her 2 pip derinleştikçe 1 pip daralır, en az 5); ters sinyalde çevirme (sabit kâr al yok).
+Kapanış mesajında sebep, pip ve kâr/zarar yüzdesi yazar. Ayarlar: `SL_PIPS`, `TRAIL_START`, `TRAIL_GAP`, `TRAIL_STEP`, `TRAIL_MIN`, `LOSS_START`, `LOSS_GAP`, `LOSS_STEP`, `LOSS_MIN`, `PIP_SIZE`.
 ```bash
 python dip_tavan.py            # son durum
 python dip_tavan.py --history  # son 60 günün sinyalleri + kâr/zarar özeti

@@ -2,8 +2,9 @@
 
 15dk, 30dk, 45dk ve 1s grafiklerde EMA, Bollinger, RSI, StochRSI, MACD ve Hacim
 göstergeleriyle dip (🟢 AL) ve tavan (🔴 SAT) noktalarını arar. Sabit kâr al yok:
--SL_PIPS zarar durdur, kâr TRAIL_START pip olunca stop zirvenin TRAIL_GAP pip
-gerisinden takip eder; ters yönde yeni sinyal işlemi kapatıp çevirir.
+-SL_PIPS zarar durdur. Kâr TRAIL_START pip olunca iz süren stop TRAIL_GAP pip geriden
+başlar, kâr arttıkça mesafe daralır. Zarar LOSS_START pip olunca dibin LOSS_GAP pip
+üstüne çıkış konur, zarar derinleştikçe bu mesafe daralır. Ters sinyal işlemi çevirir.
 """
 import argparse
 import json
@@ -27,8 +28,17 @@ REQUIRED_15M = "STOCHRSI"  # ...ve bunlardan biri StochRSI (son 5 mumda tam 0 / 
 MIN_SCORE_HIGHER = 1    # 30dk/45dk/1s'den en az ikisinde en az 1 gösterge onaylamalı
 
 SL_PIPS = float(os.getenv("SL_PIPS", "25"))  # zarar durdur
-TRAIL_START = float(os.getenv("TRAIL_START", "20"))  # bu kâra ulaşınca iz süren stop başlar
-TRAIL_GAP = float(os.getenv("TRAIL_GAP", "10"))      # zirve kârın bu kadar gerisinden takip
+# Kademeli iz süren stop: mesafe = max(TRAIL_MIN, TRAIL_GAP - TRAIL_STEP * (zirve - TRAIL_START))
+TRAIL_START = float(os.getenv("TRAIL_START", "20"))
+TRAIL_GAP = float(os.getenv("TRAIL_GAP", "15"))
+TRAIL_STEP = float(os.getenv("TRAIL_STEP", "0.5"))
+TRAIL_MIN = float(os.getenv("TRAIL_MIN", "3"))
+# Kademeli zarar koruma (iz süren stopun tersi): dip zarar >= LOSS_START olunca çıkış seviyesi
+# = dip + max(LOSS_MIN, LOSS_GAP - LOSS_STEP * (dip - LOSS_START)); fiyat oraya dönerse kapanır
+LOSS_START = float(os.getenv("LOSS_START", "15"))
+LOSS_GAP = float(os.getenv("LOSS_GAP", "15"))
+LOSS_STEP = float(os.getenv("LOSS_STEP", "0.5"))
+LOSS_MIN = float(os.getenv("LOSS_MIN", "5"))
 PIP_SIZE = float(os.getenv("PIP_SIZE", "1.0"))  # altında 1 pip = 1 $
 
 STATE_FILE = os.getenv("STATE_FILE", "dip_tavan_state.json")
@@ -114,12 +124,22 @@ def _open_text(row: pd.Series, direction: int) -> str:
              f"Giriş fiyatı: {c:.2f}",
              f"Zarar durdur (-{SL_PIPS:g} pip = -${SL_PIPS * PIP_SIZE:g}): {_sl(direction, c):.2f}",
              f"Sabit kâr al yok: kâr +{TRAIL_START:g} pip ({c + direction * TRAIL_START * PIP_SIZE:.2f}) olunca "
-             f"iz süren stop devreye girer, zirvenin {TRAIL_GAP:g} pip gerisinden takip eder.",
+             f"iz süren stop {TRAIL_GAP:g} pip geriden başlar, kâr arttıkça mesafe daralır (en az {TRAIL_MIN:g}).",
+             f"Zarar -{LOSS_START:g} pip ({c - direction * LOSS_START * PIP_SIZE:.2f}) olursa: fiyat dipten "
+             f"{LOSS_GAP:g} pip toparlanınca kapat; zarar derinleştikçe mesafe daralır (en az {LOSS_MIN:g}).",
              f"🛑 Girişte zarar durdur emri koyun: {_sl(direction, c):.2f}", ""]
     for name in TIMEFRAMES:
         lst = row[f"{key}_list_{name}"]
         lines.append(f"{name:<5} {len(lst)}/6  {', '.join(lst) if lst else '-'}")
     return "\n".join(lines)
+
+
+def trail_gap(peak: float) -> float:
+    return max(TRAIL_MIN, TRAIL_GAP - TRAIL_STEP * (peak - TRAIL_START))
+
+
+def loss_gap(trough: float) -> float:
+    return max(LOSS_MIN, LOSS_GAP - LOSS_STEP * (trough - LOSS_START))
 
 
 def _sl(direction: int, entry: float) -> float:
@@ -154,24 +174,48 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
         t, pos, sig = row["close_time"], state.get("position"), int(row["new_signal"])
         if pos and "sl" not in pos:  # eski (sabit kâr al) kayıt
             pos.update(sl=_sl(pos["dir"], pos["entry"]), peak=0.0, trail=False)
+        if pos:
+            pos.setdefault("trough", 0.0)
+            pos.setdefault("lx", None)
         if pos and t > pd.Timestamp(pos["time"]):
             d, e = pos["dir"], pos["entry"]
+            op = float(row["Open"])
             hi, lo = (row["High"], row["Low"]) if d == 1 else (row["Low"], row["High"])
             if d * (lo - pos["sl"]) <= 0:  # aynı mumda önce stop varsayılır (temkinli)
                 reason = (f"iz süren stop (zirve +{pos['peak']:.1f} pip)" if pos["trail"]
                           else f"-{SL_PIPS:g} pip zarar durdur")
-                events.append(_close(pos, row, pos["sl"], reason))
+                px = pos["sl"] if d * (op - pos["sl"]) > 0 else op  # boşlukla geçildiyse açılıştan
+                events.append(_close(pos, row, px, reason))
+                state["position"] = pos = None
+            elif pos["lx"] is not None and d * (hi - pos["lx"]) >= 0:
+                px = pos["lx"] if d * (op - pos["lx"]) < 0 else op
+                events.append(_close(pos, row, px, f"zarar koruma (dip -{pos['trough']:.1f} pip, toparlanınca)"))
                 state["position"] = pos = None
             else:
                 pos["peak"] = max(pos["peak"], d * (hi - e) / PIP_SIZE)
+                pos["trough"] = max(pos["trough"], -d * (lo - e) / PIP_SIZE)
                 if pos["peak"] >= TRAIL_START:
-                    pos["sl"] = e + d * max(d * (pos["sl"] - e) / PIP_SIZE, pos["peak"] - TRAIL_GAP) * PIP_SIZE
+                    pos["lx"] = None
+                    pos["sl"] = e + d * max(d * (pos["sl"] - e) / PIP_SIZE,
+                                            pos["peak"] - trail_gap(pos["peak"])) * PIP_SIZE
                     if not pos["trail"]:
                         pos["trail"] = True
                         events.append((t, "TAKIP",
                                        f"🔒 İZ SÜREN STOP DEVREDE (Dip-Tavan)  |  {t:%Y-%m-%d %H:%M} UTC\n"
                                        f"{'AL' if d == 1 else 'SAT'} @ {e:.2f} · kâr +{pos['peak']:.1f} pip\n"
-                                       f"Yeni stop: {pos['sl']:.2f} (en az {d * (pos['sl'] - e) / PIP_SIZE:+.1f} pip kilitli)", {}))
+                                       f"Yeni stop: {pos['sl']:.2f} (en az {d * (pos['sl'] - e) / PIP_SIZE:+.1f} pip kilitli)\n"
+                                       f"Kâr arttıkça mesafe daralır: +30'da {trail_gap(30):g}, +40'ta {trail_gap(40):g}, en az {TRAIL_MIN:g} pip.", {}))
+                elif pos["trough"] >= LOSS_START:
+                    lx = e + d * (-pos["trough"] + loss_gap(pos["trough"])) * PIP_SIZE
+                    first = pos["lx"] is None
+                    pos["lx"] = lx if first else (min(pos["lx"], lx) if d == 1 else max(pos["lx"], lx))
+                    if first:
+                        events.append((t, "TAKIP",
+                                       f"🛡 ZARAR KORUMA DEVREDE (Dip-Tavan)  |  {t:%Y-%m-%d %H:%M} UTC\n"
+                                       f"{'AL' if d == 1 else 'SAT'} @ {e:.2f} · zarar -{pos['trough']:.1f} pip\n"
+                                       f"Fiyat {pos['lx']:.2f} seviyesine dönerse kapat "
+                                       f"({d * (pos['lx'] - e) / PIP_SIZE:+.1f} pip). Zarar derinleştikçe seviye "
+                                       f"düşer, son stop {pos['sl']:.2f}.", {}))
         if sig and pos and pos["dir"] != sig:
             events.append(_close(pos, row, float(row["Close"]), "ters yönde yeni sinyal"))
             state["position"] = pos = None
@@ -179,7 +223,7 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
             c = float(row["Close"])
             events.append((t, "SINYAL", _open_text(row, sig), {"dir": sig, "price": round(c, 2)}))
             state["position"] = {"dir": sig, "entry": c, "sl": _sl(sig, c), "peak": 0.0,
-                                 "trail": False, "time": t.isoformat()}
+                                 "trail": False, "trough": 0.0, "lx": None, "time": t.isoformat()}
     return events
 
 
@@ -248,6 +292,12 @@ def export_dashboard(data: pd.DataFrame, state: dict):
         "sl_pips": SL_PIPS,
         "trail_start": TRAIL_START,
         "trail_gap": TRAIL_GAP,
+        "trail_step": TRAIL_STEP,
+        "trail_min": TRAIL_MIN,
+        "loss_start": LOSS_START,
+        "loss_gap": LOSS_GAP,
+        "loss_step": LOSS_STEP,
+        "loss_min": LOSS_MIN,
         "pip_size": PIP_SIZE,
         "position": state.get("position"),
         "history": history,

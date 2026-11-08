@@ -99,7 +99,7 @@ startPage("dip_tavan", d => {
   r.textContent = dip ? "🟢 DİP – AL BÖLGESİ" : top ? "🔴 TAVAN – SAT BÖLGESİ"
     : `⚪ Dip/tavan yok · 15dk'da ${req ? req + " dahil " : ""}en az ${d.min_score_15m}/6 gerekli`;
   $("d-pos").innerHTML = positionHtml(d.position, d.price, d.tp_pips, d.sl_pips, d.pip_size);
-  if (d.trail_start) $("d-rule").textContent = `Kural: 15dk'da son ${d.lookback} mumda StochRSI 0/100 dahil en az ${d.min_score_15m}/6 gösterge; 30dk/45dk/1s'den en az ikisinde en az ${d.min_score_higher} onay. Zarar durdur −${d.sl_pips} pip; kâr +${d.trail_start} pip olunca iz süren stop zirvenin ${d.trail_gap} pip gerisinden takip eder; ters sinyal işlemi çevirir.`;
+  if (d.trail_start) $("d-rule").textContent = `Kural: 15dk'da son ${d.lookback} mumda StochRSI 0/100 dahil en az ${d.min_score_15m}/6 gösterge; 30dk/45dk/1s'den en az ikisinde en az ${d.min_score_higher} onay. Zarar durdur −${d.sl_pips} pip. Kâr +${d.trail_start} pip olunca iz süren stop ${d.trail_gap} pip geriden başlar` + (d.trail_step ? `, kâr her ${1 / d.trail_step} pip arttıkça mesafe 1 pip daralır (en az ${d.trail_min}). Zarar −${d.loss_start} pip olunca fiyat dipten ${d.loss_gap} pip toparlanırsa işlem kapanır; zarar derinleştikçe bu mesafe de daralır (en az ${d.loss_min})` : "") + `; ters sinyal işlemi çevirir.`;
   $("d-stats").innerHTML = statsHtml(d.stats);
   $("d-hist").innerHTML = historyHtml(d.history);
   renderChart(d, d.sl_pips);

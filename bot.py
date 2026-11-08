@@ -291,6 +291,8 @@ def position_line(pos, price: float) -> str:
     side = "🟢 AL" if pos["dir"] == 1 else "🔴 SAT"
     stop = (f"\n{'🔒 İz süren stop' if pos.get('trail') else 'Zarar durdur'}: {pos['sl']:.2f}"
             if "sl" in pos else "")
+    if pos.get("lx") is not None:
+        stop += f"\n🛡 Zarar koruma: fiyat {pos['lx']:.2f} seviyesine dönerse kapat"
     return (f"Açık işlem: {side} @ {pos['entry']:.2f}\n"
             f"Anlık {'kâr' if pct >= 0 else 'zarar'}: {pct:+.2f}%  ({pips:+.1f} pip){stop}")
 

@@ -28,12 +28,14 @@ function positionHtml(pos, price, tp, sl, pip) {
   const pips = pos.dir * (price - pos.entry) / pip;
   const stopPx = pos.sl !== undefined ? pos.sl : sl ? pos.entry - pos.dir * sl * pip : null;
   const stop = stopPx === null ? "" : `<div><span class="muted small">${pos.trail ? "🔒 İz süren stop" : "Zarar durdur"}</span><b class="${pos.trail ? "green" : "red"}">${fmt(stopPx)}</b></div>`;
+  const lx = pos.lx !== undefined && pos.lx !== null ? `<div><span class="muted small">🛡 Zarar koruma (dönerse kapat)</span><b>${fmt(pos.lx)}</b></div>` : "";
   const target = tp ? `<div><span class="muted small">Kâr al</span><b class="green">${fmt(pos.entry + pos.dir * tp * pip)}</b></div>` : "";
   return `<div class="pos">
     <div><span class="muted small">Yön</span><b>${side(pos.dir)}</b></div>
     <div><span class="muted small">Giriş · ${dt(Date.parse(pos.time) / 1000)}</span><b>${fmt(pos.entry)}</b></div>
     ${target}
     ${stop}
+    ${lx}
     <div><span class="muted small">Anlık kâr/zarar</span><b class="${live >= 0 ? "green" : "red"}">${pct(live)} (${fmt(pips, 1)} pip)</b></div>
   </div>`;
 }

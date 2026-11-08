@@ -7,17 +7,25 @@
 //| AL : 15dk'da StochRSI (%K tam 0,00) dahil en az 3/6 dip ve       |
 //|      30dk/45dk/1s'den en az ikisinde en az 1 dip koşulu.         |
 //| SAT: tersi (%K tam 100,00).                                      |
-//| Çıkış: zarar durdur, +TrailStart pip kârda iz süren stop,        |
-//|        ters sinyalde kapat ve ters yönde aç. Sabit kâr al yok.   |
+//| Çıkış: zarar durdur; +TrailStart pip kârda kademeli iz süren stop|
+//|        (kâr arttıkça mesafe daralır); -LossStart pip zararda     |
+//|        kademeli zarar koruma (dipten toparlanınca kapat, zarar   |
+//|        derinleştikçe mesafe daralır); ters sinyalde çevir.       |
 //+------------------------------------------------------------------+
 #property copyright "Okira59"
-#property version   "1.00"
-#property description "XAUUSD Dip-Tavan: 15dk/30dk/45dk/1s, StochRSI 0/100 şartı, iz süren stop"
+#property version   "1.10"
+#property description "XAUUSD Dip-Tavan: 15dk/30dk/45dk/1s, StochRSI 0/100 şartı, kademeli iz süren stop ve zarar koruma"
 
 input double InpLots          = 0.01;   // Lot (çoğu aracı kurumda 0.01 lot = 1 pip başına $1)
 input double InpSlPips        = 25;     // Zarar durdur (pip)
 input double InpTrailStart    = 20;     // İz süren stop başlangıcı (pip kâr)
-input double InpTrailGap      = 10;     // İz süren stop mesafesi (pip)
+input double InpTrailGap      = 15;     // Başlangıçtaki iz süren stop mesafesi (pip)
+input double InpTrailShrink   = 0.5;    // Kâr 1 pip arttıkça mesafe bu kadar daralır
+input double InpTrailMin      = 3;      // En dar iz süren stop mesafesi (pip)
+input double InpLossStart     = 15;     // Zarar koruma başlangıcı (pip zarar)
+input double InpLossGap       = 15;     // Dipten bu kadar toparlanınca kapat (pip)
+input double InpLossShrink    = 0.5;    // Zarar 1 pip derinleştikçe mesafe bu kadar daralır
+input double InpLossMin       = 5;      // En dar zarar koruma mesafesi (pip)
 input double InpTrailStep     = 0.2;    // Stop en az bu kadar ilerleyince güncellenir (pip)
 input double InpPipSize       = 1.0;    // 1 pip = fiyat birimi (altın: 1.0 = $1)
 input int    InpLookback      = 5;      // Dip/tavan koşulları son kaç mumda aranır
@@ -340,8 +348,27 @@ void Open(int dir, string info)
                           DoubleToString(sl, _Digits), InpSlPips, info));
   }
 
-//--- iz süren stop: kâr >= TrailStart olunca stop = fiyat - TrailGap (yalnızca ileri)
-void ManageTrailing()
+//--- pozisyonun en derin zararı (pip); EA yeniden başlasa da kaybolmasın diye global değişkende
+string TroughKey(ulong tk) { return StringFormat("OkiraDT_%I64u_tr", tk); }
+
+void ClosePos(ulong tk, int dir, string why)
+  {
+   MqlTradeRequest rq; MqlTradeResult rs;
+   ZeroMemory(rq);
+   rq.action   = TRADE_ACTION_DEAL;
+   rq.position = tk;
+   rq.volume   = PositionGetDouble(POSITION_VOLUME);
+   rq.type     = dir == 1 ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+   rq.price    = dir == 1 ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   rq.comment  = why;
+   Send(rq, rs, why);
+  }
+
+//--- kademeli çıkış:
+//    kâr >= TrailStart: stop = zirve - max(TrailMin, TrailGap - TrailShrink*(zirve-TrailStart)) (yalnızca ileri)
+//    kâr < TrailStart ve dip zarar >= LossStart: fiyat dip + max(LossMin, LossGap - LossShrink*(dip-LossStart))
+//    seviyesine dönerse kapat (seviye yalnızca aşağı iner)
+void ManageExits()
   {
    double stops = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -353,22 +380,67 @@ void ManageTrailing()
       int    dir   = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? 1 : -1;
       double open  = PositionGetDouble(POSITION_PRICE_OPEN);
       double sl    = PositionGetDouble(POSITION_SL);
+      double tp    = PositionGetDouble(POSITION_TP);
       double price = dir == 1 ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       double pips  = dir * (price - open) / InpPipSize;
-      if(pips < InpTrailStart) continue;
-      double newSl = NormalizeDouble(open + dir * (pips - InpTrailGap) * InpPipSize, _Digits);
-      if(dir * (price - newSl) < stops) continue;
-      if(sl != 0 && dir * (newSl - sl) < InpTrailStep * InpPipSize) continue;
-      bool first = (sl == 0 || dir * (sl - open) < 0);
+      double slPips = sl == 0 ? -InpSlPips : dir * (sl - open) / InpPipSize;
+      bool   trailing = slPips >= 0;
+
+      string key = TroughKey(tk);
+      double tr = GlobalVariableCheck(key) ? GlobalVariableGet(key) : 0;
+      if(-pips > tr) { tr = -pips; GlobalVariableSet(key, tr); }
+
+      if(pips >= InpTrailStart || trailing)
+        {
+         if(tp != 0)                                          // zarar koruma seviyesini kaldır
+           {
+            MqlTradeRequest rq; MqlTradeResult rs;
+            ZeroMemory(rq);
+            rq.action = TRADE_ACTION_SLTP; rq.position = tk; rq.sl = sl; rq.tp = 0;
+            Send(rq, rs, "Zarar koruma kaldırma");
+            tp = 0;
+           }
+         if(pips < InpTrailStart) continue;
+         double gap   = MathMax(InpTrailMin, InpTrailGap - InpTrailShrink * (pips - InpTrailStart));
+         double newSl = NormalizeDouble(open + dir * (pips - gap) * InpPipSize, _Digits);
+         if(dir * (price - newSl) < stops) continue;
+         if(sl != 0 && dir * (newSl - sl) < InpTrailStep * InpPipSize) continue;
+         bool first = !trailing;
+         MqlTradeRequest rq; MqlTradeResult rs;
+         ZeroMemory(rq);
+         rq.action   = TRADE_ACTION_SLTP;
+         rq.position = tk;
+         rq.sl       = newSl;
+         rq.tp       = 0;
+         if(Send(rq, rs, "Stop güncelleme") && first)
+            Notify(StringFormat("Dip-Tavan iz süren stop devrede: %s %s · kâr %+.1f pip · stop %s",
+                                dir == 1 ? "AL" : "SAT", _Symbol, pips, DoubleToString(newSl, _Digits)));
+         continue;
+        }
+
+      if(tr < InpLossStart) continue;
+      double lgap  = MathMax(InpLossMin, InpLossGap - InpLossShrink * (tr - InpLossStart));
+      double level = NormalizeDouble(open + dir * (-tr + lgap) * InpPipSize, _Digits);
+      if(tp != 0 && dir * (level - tp) > 0) level = tp;      // seviye yalnızca aşağı iner
+      if(dir * (price - level) >= 0)                          // fiyat seviyeye döndü
+        {
+         Notify(StringFormat("Dip-Tavan zarar koruma: %s %s kapatılıyor · dip -%.1f pip · %+.1f pip",
+                             dir == 1 ? "AL" : "SAT", _Symbol, tr, pips));
+         ClosePos(tk, dir, "Zarar koruma");
+         continue;
+        }
+      if(tp != 0 && MathAbs(level - tp) < InpTrailStep * InpPipSize) continue;
+      if(dir * (level - price) < stops) continue;
+      bool first = (tp == 0);
       MqlTradeRequest rq; MqlTradeResult rs;
       ZeroMemory(rq);
-      rq.action   = TRADE_ACTION_SLTP;
+      rq.action   = TRADE_ACTION_SLTP;                        // seviye kâr al emri olarak sunucuya da konur
       rq.position = tk;
-      rq.sl       = newSl;
-      rq.tp       = PositionGetDouble(POSITION_TP);
-      if(Send(rq, rs, "Stop güncelleme") && first)
-         Notify(StringFormat("Dip-Tavan iz süren stop devrede: %s %s · kâr %+.1f pip · stop %s",
-                             dir == 1 ? "AL" : "SAT", _Symbol, pips, DoubleToString(newSl, _Digits)));
+      rq.sl       = sl;
+      rq.tp       = level;
+      if(Send(rq, rs, "Zarar koruma") && first)
+         Notify(StringFormat("Dip-Tavan zarar koruma devrede: %s %s · dip -%.1f pip · fiyat %s seviyesine dönerse kapanır",
+                             dir == 1 ? "AL" : "SAT", _Symbol, tr, DoubleToString(level, _Digits)));
      }
   }
 
@@ -378,13 +450,14 @@ int OnInit()
    if(StringFind(_Symbol, "XAU") < 0 && StringFind(_Symbol, "GOLD") < 0)
       Print("Uyarı: Bu EA altın (XAUUSD) için ayarlandı. Şu anki sembol: ", _Symbol);
    Print("Okira Dip-Tavan EA başladı · ", _Symbol, " · lot ", InpLots, " · stop ", InpSlPips,
-         " pip · iz süren stop +", InpTrailStart, "/", InpTrailGap, " pip");
+         " pip · iz süren stop +", InpTrailStart, "/", InpTrailGap, "→", InpTrailMin,
+         " pip · zarar koruma -", InpLossStart, "/", InpLossGap, "→", InpLossMin, " pip");
    return INIT_SUCCEEDED;
   }
 
 void OnTick()
   {
-   ManageTrailing();
+   ManageExits();
 
    datetime bar = iTime(_Symbol, PERIOD_M15, 0);
    if(bar == 0 || bar == g_lastBar) return;
@@ -415,7 +488,10 @@ void OnTradeTransaction(const MqlTradeTransaction &tr, const MqlTradeRequest &rq
    if(HistoryDealGetInteger(tr.deal, DEAL_ENTRY) != DEAL_ENTRY_OUT) return;
    double p = HistoryDealGetDouble(tr.deal, DEAL_PROFIT) + HistoryDealGetDouble(tr.deal, DEAL_SWAP)
               + HistoryDealGetDouble(tr.deal, DEAL_COMMISSION);
-   string why = HistoryDealGetInteger(tr.deal, DEAL_REASON) == DEAL_REASON_SL ? "stop" : "ters sinyal / elle";
+   long rsn = HistoryDealGetInteger(tr.deal, DEAL_REASON);
+   string why = rsn == DEAL_REASON_SL ? "stop" : rsn == DEAL_REASON_TP ? "zarar koruma" : "ters sinyal / zarar koruma / elle";
+   ulong pid = (ulong)HistoryDealGetInteger(tr.deal, DEAL_POSITION_ID);
+   if(!PositionSelectByTicket(pid)) GlobalVariableDel(TroughKey(pid));
    Notify(StringFormat("Dip-Tavan işlem kapandı (%s) @ %s · %+.2f %s", why,
                        DoubleToString(HistoryDealGetDouble(tr.deal, DEAL_PRICE), _Digits),
                        p, AccountInfoString(ACCOUNT_CURRENCY)));
