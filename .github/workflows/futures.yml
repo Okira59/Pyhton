@@ -9,6 +9,11 @@ on:
         description: "Telegram'a deneme mesajı gönder"
         type: boolean
         default: false
+      bitget_test:
+        description: "Bitget testi (baglanti = bakiye kontrolü, emir = demo hesapta küçük işlem aç/kapat)"
+        type: choice
+        options: ["yok", "baglanti", "emir"]
+        default: "yok"
 
 permissions:
   contents: write
@@ -30,8 +35,22 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Sinyal kontrolü
+      - name: Bitget testi
+        if: ${{ inputs.bitget_test == 'baglanti' || inputs.bitget_test == 'emir' }}
         env:
+          BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
+          BITGET_API_SECRET: ${{ secrets.BITGET_API_SECRET }}
+          BITGET_PASSPHRASE: ${{ secrets.BITGET_PASSPHRASE }}
+          BITGET_DEMO: ${{ vars.BITGET_DEMO || '1' }}
+        run: python futures.py --bitget-test ${{ inputs.bitget_test }}
+      - name: Sinyal kontrolü
+        if: ${{ !(inputs.bitget_test == 'baglanti' || inputs.bitget_test == 'emir') }}
+        env:
+          BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
+          BITGET_API_SECRET: ${{ secrets.BITGET_API_SECRET }}
+          BITGET_PASSPHRASE: ${{ secrets.BITGET_PASSPHRASE }}
+          BITGET_TRADE: ${{ vars.BITGET_TRADE || '1' }}
+          BITGET_DEMO: ${{ vars.BITGET_DEMO || '1' }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID_FUTURES || '-1004374669827' }}

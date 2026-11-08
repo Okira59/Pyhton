@@ -18,6 +18,7 @@ from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 import requests
 
+import bitget_trade
 import bot
 import dashboard
 from bot import _closed_only, send_telegram, status_due
@@ -420,6 +421,17 @@ def _daily_text(day: str, c: dict, results: dict, state: dict) -> str:
     return "\n".join(lines)
 
 
+def _send_private(text: str):
+    """Yalnızca özel sohbete gönderir (kanala değil): Bitget hesap bildirimleri."""
+    if not (bot.TELEGRAM_TOKEN and bot.TELEGRAM_CHAT_ID):
+        return
+    try:
+        requests.post(f"https://api.telegram.org/bot{bot.TELEGRAM_TOKEN}/sendMessage",
+                      data={"chat_id": bot.TELEGRAM_CHAT_ID, "text": text}, timeout=10)
+    except requests.RequestException as e:
+        print(f"Telegram hatası: {e}")
+
+
 def check_and_notify(send: bool = True):
     state = _load_state()
     top = top_symbols()
@@ -492,6 +504,15 @@ def check_and_notify(send: bool = True):
     ref = results.get("BTCUSDT")
     if send and ref is not None and status_due(state, ref["close_time"].iloc[-1]):
         send_telegram(_status_text(results, state))
+    if bitget_trade.enabled():
+        def bnotify(text):
+            print(f"\n{text}")
+            if send:
+                _send_private(text)
+        try:
+            bitget_trade.sync(state, now, MARGIN_USD, LEVERAGE, MAX_OPEN, bnotify)
+        except Exception as e:  # borsa hatası simülasyonu ve bildirimleri engellemesin
+            print(f"Bitget senkronu yapılamadı: {type(e).__name__}: {e}")
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=1)
     try:
@@ -563,7 +584,12 @@ if __name__ == "__main__":
     p.add_argument("--history", metavar="SEMBOL", help="Bir coinin geçmiş testini göster (ör. BTCUSDT)")
     p.add_argument("--days", type=int, default=60)
     p.add_argument("--rapor", action="store_true", help="Bugünün gün sonu raporunu ekrana yaz (göndermez)")
+    p.add_argument("--bitget-test", choices=["baglanti", "emir"],
+                   help="Bitget bağlantı testi (emir: demo hesapta küçük BTC işlemi açıp kapatır)")
     args = p.parse_args()
+    if args.bitget_test:
+        bitget_trade.self_test(order=args.bitget_test == "emir")
+        raise SystemExit
     if args.test:
         send_telegram(f"✅ Futures botu bağlandı. Hacmi en yüksek {TOP_N} coin 7/24 taranıyor.\n"
                       "🟢 = LONG   🔴 = SHORT  (10x, simülasyon)")
