@@ -32,12 +32,19 @@
   <section class="card wide">
     <h2><span>Grafik <span class="tabs" id="tabs"></span></span>
       <span class="muted small">
-        <span style="color:#22c55e">SuperTrend</span>/<span style="color:#ef4444">AI</span> · Hacim · ▲ LONG · ▼ SHORT</span></h2>
+        <span style="color:#3b82f6">EMA 9</span> · <span style="color:#f59e0b">EMA 21</span> ·
+        <span style="color:#a78bfa">Bollinger (20,2)</span> · Hacim · ▲ LONG · ▼ SHORT</span></h2>
     <div id="chart"></div>
+    <div class="osc-title">RSI (14) · 30 / 50 / 70</div>
+    <div id="rsi" class="osc"></div>
+    <div class="osc-title">StochRSI (14,14,3,3) · <span style="color:#3b82f6">%K</span> · <span style="color:#f59e0b">%D</span> · AL 0 / SAT 100</div>
+    <div id="stoch" class="osc"></div>
+    <div class="osc-title">MACD DEMA (12,26,9) · <span style="color:#3b82f6">MACD</span> · <span style="color:#f59e0b">Sinyal</span> · histogram</div>
+    <div id="macd" class="osc"></div>
   </section>
 
   <section class="card">
-    <h2>Gösterge yönleri <span class="muted small">6 zaman dilimi · 2 gösterge <span id="f-live"></span></span></h2>
+    <h2>Gösterge yönleri <span class="muted small">6 zaman dilimi · 6 gösterge <span id="f-live"></span></span></h2>
     <table id="f-scores"></table>
     <div id="f-result" class="result"></div>
   </section>
@@ -53,13 +60,13 @@
     <div class="scroll"><table id="f-hist"></table></div>
   </section>
 
-  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Her işlem isolated $20 teminat (10x = $200 pozisyon) ile açılır, aynı anda en fazla 10 işlem açık olur; limit doluyken gelen sinyaller sadece Telegram'a bildirilir. Aynı anda birden fazla sinyal gelirse puanı en yüksek olanlar önce açılır. Gerçek işlemde limit emirle girilmesi önerilir (daha düşük ücret). Sabit kâr hedefi yoktur: ilk stop -%20 ROE; kâr +%20 ROE'ye ulaşınca kademeli iz süren stop devreye girer: en yüksek kârın %15 ROE gerisinden başlar, kâr her %2 arttıkça mesafe 1 puan daralır (en az %3). Sinyal yalnızca Lorentzian Classification ve SuperTrend AI göstergelerine göre üretilir: 5dk, 45dk, 1s ve 4s'te ikisi de aynı yönde olmalıdır. Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
+  <p class="muted small wide">Simülasyondur, gerçek emir açılmaz. Her işlem isolated $20 teminat (10x = $200 pozisyon) ile açılır, aynı anda en fazla 10 işlem açık olur; limit doluyken gelen sinyaller sadece Telegram'a bildirilir. Aynı anda birden fazla sinyal gelirse puanı en yüksek olanlar önce açılır. Gerçek işlemde limit emirle girilmesi önerilir (daha düşük ücret). Sabit kâr hedefi yoktur: ilk stop -%20 ROE; kâr +%20 ROE'ye ulaşınca kademeli iz süren stop devreye girer: en yüksek kârın %15 ROE gerisinden başlar, kâr her %2 arttıkça mesafe 1 puan daralır (en az %3). Kâr/zarar yüzdeleri 10x kaldıraçlı (ROE) hesaplanır;
   işlem ücreti (giriş+çıkış ≈ %1,2 ROE) ve fonlama dahil değildir. Geçmiş tablo botun canlı açıp kapattığı işlemlerdir. Yatırım tavsiyesi değildir.</p>
 </main>
 <script src="common.js"></script>
 <script>
 const TFS = { "5dk": ["5m", 300], "15dk": ["15m", 900], "30dk": ["30m", 1800], "45dk": ["15m", 2700], "1s": ["1H", 3600], "4s": ["4H", 14400] };
-const CHECKS = ["LORENTZIAN", "SUPERTREND"];
+const CHECKS = ["EMA", "BOLLINGER", "RSI", "STOCHRSI", "MACD", "HACIM"];
 let tf = localStorage.getItem("futTf") || "15dk", sym = localStorage.getItem("futSym") || "XAUUSDT", bot = null, livePrice = null, liveRows = null;
 const coinName = s => s.endsWith("USDT") ? s.slice(0, -4) : s;
 const dpOf = s => { const c = bot && bot.coins.find(c => c.s === s); return c ? c.dp : bot && bot.positions[s] ? bot.positions[s].dp : 2; };
@@ -68,82 +75,22 @@ const usdF = (r, p) => { const v = (p && p.margin || (bot ? bot.margin_usd : 20)
 const roeOf = (p, price) => p.dir * (price - p.entry) / p.entry * 100 * (bot ? bot.leverage : 10);
 const priceOf = s => s === sym && livePrice ? livePrice : ticks[s] || bot && bot.prices[s];
 
-// ---- Lorentzian Classification ve SuperTrend AI (indicators.py ile aynı) ----
-// pandas ewm gibi: geçersiz (NaN/null) değerleri atlar
-const ewmN = (a, al) => { let prev = null; return a.map(v => v === null || !isFinite(v) ? prev : prev = prev === null ? v : prev + al * (v - prev)); };
-const rmaA = (a, p) => ewmN(a, 1 / p), emaN = (a, p) => ewmN(a, 2 / (p + 1));
-const trA = (h, l, c) => h.map((v, i) => i ? Math.max(v - l[i], Math.abs(v - c[i - 1]), Math.abs(l[i] - c[i - 1])) : v - l[i]);
-const normA = (a, w = 1000) => a.map((v, i) => {
-  const s = a.slice(Math.max(0, i - w + 1), i + 1).filter(x => x !== null && !isNaN(x));
-  if (v === null || isNaN(v) || !s.length) return null;
-  const lo = Math.min(...s), hi = Math.max(...s); return (v - lo) / Math.max(hi - lo, 1e-10);
-});
-function lorentzianA(rows, k = 8, win = 900, hz = 4) {
-  const o = rows.map(x => x[1]), h = rows.map(x => x[2]), l = rows.map(x => x[3]), c = rows.map(x => x[4]), n = c.length;
-  const hlc3 = c.map((v, i) => (h[i] + l[i] + v) / 3), e1 = emaN(hlc3, 10);
-  const e2 = emaN(hlc3.map((v, i) => Math.abs(v - e1[i])), 10), wt1 = emaN(hlc3.map((v, i) => (v - e1[i]) / (0.015 * e2[i])), 11);
-  const wt2 = roll(wt1, 4, mean), sma = roll(c, 20, mean), mad = roll(c, 20, w => { const m = mean(w); return mean(w.map(v => Math.abs(v - m))); });
-  const cci = c.map((v, i) => sma[i] === null ? null : (v - sma[i]) / (0.015 * mad[i]));
-  const tr = trA(h, l, c), dp = h.map((v, i) => { if (!i) return 0; const u = v - h[i - 1], d = l[i - 1] - l[i]; return u > d && u > 0 ? u : 0; });
-  const dm = h.map((v, i) => { if (!i) return 0; const u = v - h[i - 1], d = l[i - 1] - l[i]; return d > u && d > 0 ? d : 0; });
-  const ts = rmaA(tr, 20), ps = rmaA(dp, 20), ms = rmaA(dm, 20);
-  const adx = rmaA(ts.map((t, i) => { const a = ps[i] / t * 100, b = ms[i] / t * 100; return Math.abs(a - b) / (a + b) * 100; }), 20);
-  const r14 = rsiA(c, 14), r9 = rsiA(c, 9), nwt = normA(wt1.map((v, i) => wt2[i] === null ? null : v - wt2[i])), ncci = normA(cci);
-  const F = c.map((_, i) => [r14[i] / 100, nwt[i], ncci[i], adx[i] / 100, r9[i] / 100]);
-  const ok = F.map(f => f.every(v => v !== null && isFinite(v)));
-  const lab = c.map((v, i) => i + hz < n ? Math.sign(c[i + hz] - v) : 0), pred = new Array(n).fill(0);
-  for (let t = 0; t < n; t++) {
-    if (!ok[t]) continue;
-    let j0 = Math.max(0, t - win); j0 += (4 - j0 % 4) % 4;
-    const d = [];
-    for (let j = j0; j <= t - hz; j += 4) if (ok[j]) d.push([F[j].reduce((s, v, q) => s + Math.log1p(Math.abs(v - F[t][q])), 0), lab[j]]);
-    if (d.length < k) continue;
-    d.sort((a, b) => a[0] - b[0]); pred[t] = d.slice(0, k).reduce((s, x) => s + x[1], 0);
-  }
-  const a1 = rmaA(trA(h, l, c), 1), a10 = rmaA(trA(h, l, c), 10), src = c.map((v, i) => (o[i] + h[i] + l[i] + v) / 4);
-  let v1 = 0, v2 = 0; const kl = [];
-  for (let i = 0; i < n; i++) {
-    v1 = 0.2 * (src[i] - (i ? src[i - 1] : src[i])) + 0.8 * v1; v2 = 0.1 * (h[i] - l[i]) + 0.8 * v2;
-    const om = v2 ? Math.abs(v1 / v2) : 0, al = (-(om ** 2) + Math.sqrt(om ** 4 + 16 * om ** 2)) / 8;
-    kl.push(al * src[i] + (1 - al) * (i ? kl[i - 1] : src[i]));
-  }
-  const sl = kl.map((v, i) => Math.abs(v - (i ? kl[i - 1] : v))), av = emaN(sl, 200);
-  let s = 0; return pred.map((p, i) => { if (a1[i] > a10[i] && (sl[i] - av[i]) / av[i] >= -0.1) s = p > 0 ? 1 : p < 0 ? -1 : s; return s; });
+// ---- göstergeler (Python indicators.py ile aynı formüller) ----
+function indicators(c) {
+  const close = c.map(x => x[4]), r = rsiA(close);
+  return { e9: emaA(close, 9), e21: emaA(close, 21), ...bandsA(close), r, ...stochA(close, r), ...macdDemaA(close) };
 }
-function supertrendA(rows, len = 10, alpha = 10) {
-  const h = rows.map(x => x[2]), l = rows.map(x => x[3]), c = rows.map(x => x[4]), atr = rmaA(trA(h, l, c), len);
-  const fac = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5], m = fac.length, hl = h.map((v, i) => (v + l[i]) / 2), K = 2 / (alpha + 1);
-  let up = fac.map(() => hl[0]), lo = up.slice(), out = up.slice(), tr = fac.map(() => 0), pf = fac.map(() => 0);
-  let tf = 1, U = hl[0], L = hl[0], os = 0; const res = [], ln = [];
-  for (let i = 0; i < c.length; i++) {
-    if (i) {
-      for (let j = 0; j < m; j++) {
-        pf[j] += K * ((c[i] - c[i - 1]) * Math.sign(c[i - 1] - out[j]) - pf[j]);
-        const u = hl[i] + atr[i] * fac[j], d = hl[i] - atr[i] * fac[j];
-        up[j] = c[i - 1] < up[j] ? Math.min(u, up[j]) : u; lo[j] = c[i - 1] > lo[j] ? Math.max(d, lo[j]) : d;
-        tr[j] = c[i] > up[j] ? 1 : c[i] < lo[j] ? 0 : tr[j]; out[j] = tr[j] === 1 ? lo[j] : up[j];
-      }
-      const p = pf.slice().sort((a, b) => a - b), q = x => { const z = (m - 1) * x, b = Math.floor(z); return p[b] + (z - b) * (p[Math.min(b + 1, m - 1)] - p[b]); };
-      let cen = [q(.25), q(.5), q(.75)], g;
-      for (let it = 0; it < 100; it++) {
-        g = [[], [], []];
-        pf.forEach((v, j) => { const a0 = Math.abs(v - cen[0]), a1 = Math.abs(v - cen[1]), a2 = Math.abs(v - cen[2]); g[a0 <= a1 && a0 <= a2 ? 0 : a1 <= a2 ? 1 : 2].push(j); });
-        const nw = g.map((x, j) => x.length ? x.reduce((s, k) => s + pf[k], 0) / x.length : cen[j]);
-        if (nw.every((v, j) => v === cen[j])) break; cen = nw;
-      }
-      if (g[2].length) tf = g[2].reduce((s, k) => s + fac[k], 0) / g[2].length;
-      const u = hl[i] + atr[i] * tf, d = hl[i] - atr[i] * tf;
-      U = c[i - 1] < U ? Math.min(u, U) : u; L = c[i - 1] > L ? Math.max(d, L) : d; os = c[i] > U ? 1 : c[i] < L ? 0 : os;
-    }
-    res.push(os ? 1 : -1); ln.push(os ? L : U);
-  }
-  res.line = ln;
-  return res;
-}
-// futures.py directions ile aynı kurallar; son (oluşan) mum için CHECKS sırasıyla
+// futures.py directions ile aynı kurallar; son (oluşan) mum için [EMA, BOLLINGER, RSI, STOCHRSI, MACD, HACIM]
 function futDirs(rows) {
-  const i = rows.length - 1;
-  return [lorentzianA(rows)[i], supertrendA(rows)[i]];
+  const c = rows.map(x => x[4]), v = rows.map(x => x[5]), i = c.length - 1, C = c[i], o = rows[i][1];
+  const I = indicators(rows), vm = roll(v, 20, mean), volHi = vm[i] !== null && v[i] > vm[i];
+  return [
+    dirOfBools(I.e9[i] > I.e21[i] && C > I.e9[i], I.e9[i] < I.e21[i] && C < I.e9[i]),
+    dirOfBools(C > I.mid[i] && C < I.up[i], C < I.mid[i] && C > I.lo[i]),
+    dirOfBools(I.r[i] > 50 && I.r[i] < 70, I.r[i] < 50 && I.r[i] > 30),
+    dirOfBools(stochBuy(I.k[i]), stochSell(I.k[i])),
+    dirOfBools(I.m[i] > I.s[i], I.m[i] < I.s[i]),
+    dirOfBools(volHi && C > o, volHi && C < o)];
 }
 let liveCoin = null, ticks = {};
 const LIVE_GRAN = { "5dk": "5m", "15dk": "15m", "30dk": "30m", "1s": "1H", "4s": "4H" };
@@ -153,8 +100,9 @@ async function liveScores() {
   fr["45dk"] = resampleRows(fr["15dk"], 45);
   if (s0 !== sym || !bot) return;
   const tfs = bot.timeframes, d = tfs.map(n => futDirs(fr[n])), sc = d.map(a => a.reduce((p, v) => p + v, 0));
-  const req = (bot.required_tfs || ["5dk", "45dk", "1s", "4s"]).map(n => sc[tfs.indexOf(n)]), full = CHECKS.length;
-  const sig = req.every(v => v === full) ? 1 : req.every(v => v === -full) ? -1 : 0;
+  const s5 = sc[tfs.indexOf("5dk")], hs = sc.filter((_, j) => tfs[j] !== "5dk");
+  const sig = s5 >= bot.min_score_5m && hs.filter(v => v >= bot.min_score_higher).length >= bot.min_higher_tfs ? 1
+    : s5 <= -bot.min_score_5m && hs.filter(v => v <= -bot.min_score_higher).length >= bot.min_higher_tfs ? -1 : 0;
   liveCoin = { s: s0, sc, sig, ind: d.map(a => a.map(v => v > 0 ? "+" : v < 0 ? "-" : "0").join("")) };
   renderScores(bot);
 }
@@ -188,14 +136,33 @@ async function candles() {
 let ch;
 function setupCharts() {
   const main = LightweightCharts.createChart($("chart"), chartOpts());
+  const mk = id => LightweightCharts.createChart($(id), chartOpts());
+  const rs = mk("rsi"), st = mk("stoch"), mc = mk("macd");
   const line = (c, color, w = 1.5, extra = {}) => c.addLineSeries(Object.assign({ color, lineWidth: w, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }, extra));
   ch = {
-    main, priceLines: [],
+    main, rs, st, mc, priceLines: [],
     candle: main.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444", borderVisible: false }),
     vol: main.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false }),
-    st: line(main, "#22c55e", 2),
+    e9: line(main, "#3b82f6"), e21: line(main, "#f59e0b"),
+    bu: line(main, "#a78bfa", 1), bm: line(main, "#a78bfa", 1, { lineStyle: 2 }), bl: line(main, "#a78bfa", 1),
+    r: line(rs, "#e879f9", 1.5, { lastValueVisible: true }),
+    k: line(st, "#3b82f6", 1.5, { lastValueVisible: true }), d: line(st, "#f59e0b", 1.5, { lastValueVisible: true }),
+    hist: mc.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false }),
+    m: line(mc, "#3b82f6", 1.5, { lastValueVisible: true }), s: line(mc, "#f59e0b", 1.5, { lastValueVisible: true }),
   };
   main.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  const fixed = (s, lo, hi, lines) => {
+    s.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: lo, maxValue: hi } }) });
+    for (const [v, c] of lines) s.createPriceLine({ price: v, color: c, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "" });
+  };
+  fixed(ch.r, 0, 100, [[70, "#ef4444"], [50, "#4b5563"], [30, "#22c55e"]]);
+  fixed(ch.k, 0, 100, [[100, "#ef4444"], [0, "#22c55e"]]);
+  const all = [main, rs, st, mc];
+  let syncing = false;
+  all.forEach(src => src.timeScale().subscribeVisibleLogicalRangeChange(r => {
+    if (syncing || !r) return;
+    syncing = true; all.forEach(c => c !== src && c.timeScale().setVisibleLogicalRange(r)); syncing = false;
+  }));
 }
 
 let lastView = null;
@@ -203,13 +170,19 @@ async function renderLive() {
   const want = sym + tf;
   const rows = await candles();
   if (want !== sym + tf) return;  // bu arada coin/zaman dilimi değişti
-  const st = supertrendA(rows);
+  const I = indicators(rows);
   const t = i => rows[i][0] + tzOffset;
-  const dp = dpOf(sym);
+  const pts = a => a.map((v, i) => v === null || isNaN(v) ? { time: t(i) } : { time: t(i), value: v });
+  const sig = I.s, dp = dpOf(sym), mdp = Math.min(dp + 2, 8);
   ch.candle.applyOptions({ priceFormat: { type: "price", precision: dp, minMove: 1 / 10 ** dp } });
+  for (const s of [ch.m, ch.s, ch.hist]) s.applyOptions({ priceFormat: { type: "price", precision: mdp, minMove: 1 / 10 ** mdp } });
   ch.candle.setData(rows.map((x, i) => ({ time: t(i), open: x[1], high: x[2], low: x[3], close: x[4] })));
   ch.vol.setData(rows.map((x, i) => ({ time: t(i), value: x[5], color: x[4] >= x[1] ? "rgba(34,197,94,.35)" : "rgba(239,68,68,.35)" })));
-  ch.st.setData(st.line.map((v, i) => ({ time: t(i), value: v, color: st[i] === 1 ? "#22c55e" : "#ef4444" })));
+  ch.e9.setData(pts(I.e9)); ch.e21.setData(pts(I.e21));
+  ch.bu.setData(pts(I.up)); ch.bm.setData(pts(I.mid)); ch.bl.setData(pts(I.lo));
+  ch.r.setData(pts(I.r)); ch.k.setData(pts(I.k)); ch.d.setData(pts(I.d));
+  ch.m.setData(pts(I.m)); ch.s.setData(pts(sig));
+  ch.hist.setData(I.m.map((v, i) => ({ time: t(i), value: v - sig[i], color: v - sig[i] >= 0 ? "rgba(34,197,94,.6)" : "rgba(239,68,68,.6)" })));
   if (lastView !== want) { ch.main.timeScale().setVisibleLogicalRange({ from: rows.length - 160, to: rows.length + 3 }); lastView = want; }
   liveRows = rows;
   livePrice = rows[rows.length - 1][4];
@@ -268,7 +241,7 @@ function renderScores(x) {
   const r = $("f-result");
   r.className = "result " + (c.sig === 1 ? "buy" : c.sig === -1 ? "sell" : "neutral");
   r.textContent = c.sig === 1 ? "🟢 LONG koşulları oluştu" : c.sig === -1 ? "🔴 SHORT koşulları oluştu"
-    : `⚪ Sinyal yok · ${(x.required_tfs || ["5dk", "45dk", "1s", "4s"]).join(", ")}'te Lorentzian ve SuperTrend AI aynı yönde olmalı`;
+    : `⚪ Sinyal yok · 5dk'da en az ${x.min_score_5m}/6 ve ${x.min_higher_tfs} üst zaman diliminde ${x.min_score_higher}/6 gerekli`;
 }
 function renderPositions() {
   const x = bot, ps = Object.entries(x.positions);
