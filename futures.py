@@ -1,9 +1,9 @@
 """Bitget USDT vadeli (futures) 10x simülasyon botu – hacmi en yüksek coinler.
 
 Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinleri) tarar.
-5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI (0/100), MACD DEMA,
-Hacim, Lorentzian Classification ve SuperTrend AI göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal
-+ üst zaman dilimlerinde onay + 1s'te Lorentzian ve SuperTrend AI aynı yönde olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
+5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde yalnızca Lorentzian Classification ve SuperTrend AI
+göstergelerinin yönüne bakar. 5dk, 45dk, 1s ve 4s'te ikisi de aynı yönü gösterince 10x LONG/SHORT
+işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
 zarar %20'ye ulaşınca işlem kapatılır; kâr %20'yi geçince kademeli iz süren stop devreye girer. Her işlem isolated $20
 teminatla açılır; aynı anda en fazla 10 işlem açık olur (doluyken sinyal bildirilir,
 işlem açılmaz; aynı anda gelen sinyallerden puanı en yüksek olanlar önce açılır). 7/24 çalışır (hafta sonu dahil).
@@ -22,7 +22,7 @@ import bitget_trade
 import bot
 import dashboard
 from bot import _closed_only, send_telegram, status_due
-from indicators import bollinger, ema, lorentzian, macd_dema, rsi, stoch_buy, stoch_rsi, stoch_sell, supertrend_ai
+from indicators import lorentzian, supertrend_ai
 
 # ---------------------------------------------------------------- AYARLAR ---
 TOP_N = int(os.getenv("TOP_N", "200"))
@@ -30,14 +30,8 @@ WORKERS = 5
 TIMEFRAMES = {"5dk": 5, "15dk": 15, "30dk": 30, "45dk": 45, "1s": 60, "4s": 240}
 GRAN = {"5dk": "5m", "15dk": "15m", "30dk": "30m", "1s": "1H", "4s": "4H"}  # 45dk = 15dk'dan
 HIGHER = [n for n in TIMEFRAMES if n != "5dk"]
-EMA_FAST, EMA_SLOW = 9, 21
-BB_PERIOD, BB_STD = 20, 2.0
-RSI_PERIOD = 14
-VOLUME_PERIOD = 20
-
-MIN_SCORE_5M = int(os.getenv("MIN_SCORE_5M", "6"))         # 5dk'da 8 göstergeden en az bu kadarı aynı yönde
-MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "5"))  # üst zaman diliminde onay puanı
-MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman diliminden en az bu kadarı onaylamalı
+# bu zaman dilimlerinin hepsinde Lorentzian ve SuperTrend AI sinyal yönünde olmalı
+REQUIRED_TFS = os.getenv("REQUIRED_TFS", "5dk,45dk,1s,4s").split(",")
 
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
 SL_ROE = float(os.getenv("SL_ROE", "20"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %2)
@@ -56,8 +50,7 @@ MAX_HISTORY = 300
 # ----------------------------------------------------------------------------
 
 API = "https://api.bitget.com/api/v2/mix/market/"
-CHECKS = ["EMA", "BOLLINGER", "RSI", "STOCHRSI", "MACD", "HACIM", "LORENTZIAN", "SUPERTREND"]
-REQUIRED_TF, REQUIRED_CHECKS = "1s", ["LORENTZIAN", "SUPERTREND"]  # 1s'te bu ikisi sinyal yönünde olmalı
+CHECKS = ["LORENTZIAN", "SUPERTREND"]
 TF_5M = pd.Timedelta(minutes=5)
 AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
 
@@ -115,38 +108,15 @@ def frames_from_5m(m5: pd.DataFrame) -> dict:
 
 
 def directions(df: pd.DataFrame) -> pd.DataFrame:
-    """Her mum için gösterge yönleri: +1 = yükseliş (LONG), -1 = düşüş (SHORT), 0 = nötr."""
-    c, o, v = df.Close, df.Open, df.Volume
-    e_fast, e_slow = ema(c, EMA_FAST), ema(c, EMA_SLOW)
-    up, mid, low = bollinger(c, BB_PERIOD, BB_STD)
-    r = rsi(c, RSI_PERIOD)
-    k, _ = stoch_rsi(c)
-    m, sig, _ = macd_dema(c)
-    vol_hi = v > v.rolling(VOLUME_PERIOD).mean()
+    """Her mum için gösterge yönleri: +1 = yükseliş (LONG), -1 = düşüş (SHORT)."""
     lor, _, _ = lorentzian(df)
     st, _, _ = supertrend_ai(df)
-
-    def dirn(bull, bear):
-        return bull.astype(int) - bear.astype(int)
-
-    out = pd.DataFrame({
-        "EMA": dirn((e_fast > e_slow) & (c > e_fast), (e_fast < e_slow) & (c < e_fast)),
-        "BOLLINGER": dirn((c > mid) & (c < up), (c < mid) & (c > low)),
-        "RSI": dirn((r > 50) & (r < 70), (r < 50) & (r > 30)),
-        "STOCHRSI": dirn(stoch_buy(k), stoch_sell(k)),
-        "MACD": dirn(m > sig, m < sig),
-        "HACIM": dirn(vol_hi & (c > o), vol_hi & (c < o)),
-        "LORENTZIAN": lor.astype(int),
-        "SUPERTREND": st.astype(int),
-    }, index=df.index)
+    out = pd.DataFrame({"LORENTZIAN": lor.astype(int), "SUPERTREND": st.astype(int)}, index=df.index)
     out["score"] = out[CHECKS].sum(axis=1)
     return out
 
 
-def build(frames: dict, min5=None, minh=None, ntf=None) -> pd.DataFrame:
-    min5 = MIN_SCORE_5M if min5 is None else min5
-    minh = MIN_SCORE_HIGHER if minh is None else minh
-    ntf = MIN_HIGHER_TFS if ntf is None else ntf
+def build(frames: dict) -> pd.DataFrame:
     base = frames["5dk"].copy()
     base["close_time"] = base.index + TF_5M
     for name, minutes in TIMEFRAMES.items():
@@ -156,12 +126,9 @@ def build(frames: dict, min5=None, minh=None, ntf=None) -> pd.DataFrame:
                              on="close_time", direction="backward")
     base.index = base["close_time"]
     base = base.dropna(subset=[f"score_{n}" for n in TIMEFRAMES])
-    hs = base[[f"score_{n}" for n in HIGHER]]
-    long_ = (base["score_5dk"] >= min5) & (hs.ge(minh).sum(axis=1) >= ntf)
-    short = (base["score_5dk"] <= -min5) & (hs.le(-minh).sum(axis=1) >= ntf)
-    for c in REQUIRED_CHECKS:
-        long_ &= base[f"{c}_{REQUIRED_TF}"] == 1
-        short &= base[f"{c}_{REQUIRED_TF}"] == -1
+    full = len(CHECKS)
+    long_ = pd.concat([base[f"score_{n}"] == full for n in REQUIRED_TFS], axis=1).all(axis=1)
+    short = pd.concat([base[f"score_{n}"] == -full for n in REQUIRED_TFS], axis=1).all(axis=1)
     sig = long_.astype(int) - short.astype(int)
     base["signal"] = sig
     base["new_signal"] = sig.where((sig != 0) & (sig != sig.shift()), 0)
@@ -214,7 +181,8 @@ def _open_text(sym: str, dp: int, row: pd.Series, d: int) -> str:
              f"💡 Limit emirle girin ({row['Close']:.{dp}f}); piyasa emrine göre ücret ~%60 daha düşük.", ""]
     for n in TIMEFRAMES:
         agree = [c for c in CHECKS if int(row[f"{c}_{n}"]) == d]
-        lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/{len(CHECKS)}  {', '.join(agree) if agree else '-'}")
+        lines.append(f"{n:<5} {int(row[f'score_{n}']):+d}/{len(CHECKS)}  {', '.join(agree) if agree else '-'}"
+                     + ("  (şart)" if n in REQUIRED_TFS else ""))
     lines += ["", "👉 Kontrol edin, girmek isteyen varsa girebilir."]
     return "\n".join(lines)
 
@@ -540,16 +508,12 @@ def export_dashboard(results: dict, top: list, places: dict, state: dict):
         "checks": CHECKS,
         "coins": coins,
         "prices": prices,
-        "min_score_5m": MIN_SCORE_5M,
-        "min_score_higher": MIN_SCORE_HIGHER,
-        "min_higher_tfs": MIN_HIGHER_TFS,
+        "required_tfs": REQUIRED_TFS,
         "leverage": LEVERAGE,
         "trail_start_roe": TRAIL_START_ROE,
         "trail_gap_roe": TRAIL_GAP_ROE,
         "trail_step": TRAIL_STEP,
         "trail_min_roe": TRAIL_MIN_ROE,
-        "required_tf": REQUIRED_TF,
-        "required_checks": REQUIRED_CHECKS,
         "sl_roe": SL_ROE,
         "margin_usd": MARGIN_USD,
         "max_open": MAX_OPEN,
