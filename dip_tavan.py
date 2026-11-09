@@ -165,7 +165,7 @@ def _close(pos: dict, row: pd.Series, price: float, reason: str) -> tuple:
              "pct": round(pct, 3), "pips": round(pips, 1), "reason": reason})
 
 
-def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
+def process_events(data: pd.DataFrame, state: dict, since=None, open_text=None, label: str = "Dip-Tavan") -> list:
     """Mumları sırayla işler: zarar durdur / iz süren stop / ters sinyal (KAPAT), iz süren
     stop başlangıcı (TAKIP) ve yeni AL/SAT olayları; (zaman, tür, mesaj, bilgi) listesi döner."""
     events = []
@@ -201,7 +201,7 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
                     if not pos["trail"]:
                         pos["trail"] = True
                         events.append((t, "TAKIP",
-                                       f"🔒 İZ SÜREN STOP DEVREDE (Dip-Tavan)  |  {t:%Y-%m-%d %H:%M} UTC\n"
+                                       f"🔒 İZ SÜREN STOP DEVREDE ({label})  |  {t:%Y-%m-%d %H:%M} UTC\n"
                                        f"{'AL' if d == 1 else 'SAT'} @ {e:.2f} · kâr +{pos['peak']:.1f} pip\n"
                                        f"Yeni stop: {pos['sl']:.2f} (en az {d * (pos['sl'] - e) / PIP_SIZE:+.1f} pip kilitli)\n"
                                        f"Kâr arttıkça mesafe daralır: +30'da {trail_gap(30):g}, +40'ta {trail_gap(40):g}, en az {TRAIL_MIN:g} pip.", {}))
@@ -211,7 +211,7 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
                     pos["lx"] = lx if first else (min(pos["lx"], lx) if d == 1 else max(pos["lx"], lx))
                     if first:
                         events.append((t, "TAKIP",
-                                       f"🛡 ZARAR KORUMA DEVREDE (Dip-Tavan)  |  {t:%Y-%m-%d %H:%M} UTC\n"
+                                       f"🛡 ZARAR KORUMA DEVREDE ({label})  |  {t:%Y-%m-%d %H:%M} UTC\n"
                                        f"{'AL' if d == 1 else 'SAT'} @ {e:.2f} · zarar -{pos['trough']:.1f} pip\n"
                                        f"Fiyat {pos['lx']:.2f} seviyesine dönerse kapat "
                                        f"({d * (pos['lx'] - e) / PIP_SIZE:+.1f} pip). Zarar derinleştikçe seviye "
@@ -221,7 +221,7 @@ def process_events(data: pd.DataFrame, state: dict, since=None) -> list:
             state["position"] = pos = None
         if sig and not pos:
             c = float(row["Close"])
-            events.append((t, "SINYAL", _open_text(row, sig), {"dir": sig, "price": round(c, 2)}))
+            events.append((t, "SINYAL", (open_text or _open_text)(row, sig), {"dir": sig, "price": round(c, 2)}))
             state["position"] = {"dir": sig, "entry": c, "sl": _sl(sig, c), "peak": 0.0,
                                  "trail": False, "trough": 0.0, "lx": None, "time": t.isoformat()}
     return events

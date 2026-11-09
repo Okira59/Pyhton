@@ -75,12 +75,15 @@ def _norm(s: pd.Series, window: int = 1000) -> pd.Series:
 
 
 def lorentzian(df: pd.DataFrame, neighbors: int = 8, window: int = 900, horizon: int = 4,
-               regime_threshold: float = -0.1, kernel_h: int = 8, kernel_r: float = 8.0, kernel_x: int = 25):
+               regime_threshold: float = -0.1, kernel_h: int = 8, kernel_r: float = 8.0, kernel_x: int = 25,
+               relative: bool = False):
     """TradingView "Machine Learning: Lorentzian Classification" (jdehorty) uyarlaması.
 
     Özellikler: RSI(14), WT(10,11), CCI(20), ADX(20), RSI(9). Her mumda son `window` mum içinde
     (her 4 mumda bir) Lorentzian mesafesine göre en yakın `neighbors` komşunun `horizon` mum sonraki
     yönleri toplanır. Volatilite + rejim filtresi geçerse yön güncellenir, yoksa önceki yön korunur.
+    relative=True: komşular mumun kendisinden geriye her 4 mumda bir seçilir; böylece sonuç verinin
+    hangi mumdan başladığına bağlı kalmaz.
     Dönüş: (yön +1/-1/0, tahmin toplamı, çekirdek regresyonu yükseliyor mu)."""
     import numpy as np
     c, h, l = df.Close, df.High, df.Low
@@ -110,8 +113,11 @@ def lorentzian(df: pd.DataFrame, neighbors: int = 8, window: int = 900, horizon:
         if not ok[t]:
             continue
         j0 = max(0, t - window)
-        j0 += (-j0) % 4
-        cand = np.arange(j0, t - horizon + 1, 4)
+        if relative:
+            cand = np.arange(t - horizon, j0 - 1, -4)[::-1]
+        else:
+            j0 += (-j0) % 4
+            cand = np.arange(j0, t - horizon + 1, 4)
         cand = cand[ok[cand]]
         if len(cand) < neighbors:
             continue

@@ -62,7 +62,7 @@ function historyHtml(history) {
 
 function setHeader(x) {
   $("price").textContent = "$" + fmt(x.price);
-  $("candle").textContent = x.live ? "canlı · " + new Date().toLocaleTimeString("tr-TR") : "son kapanan 15dk mum: " + dt(x.close_time);
+  $("candle").textContent = x.live ? "canlı · " + new Date().toLocaleTimeString("tr-TR") : "son kapanan " + (x.bar_label || "15dk") + " mum: " + dt(x.close_time);
   const upd = new Date(Date.parse(x.updated));
   $("updated").textContent = upd.toLocaleString("tr-TR") + ` (${Math.round((Date.now() - upd) / 60000)} dk önce)`;
   $("source").textContent = `${x.source || "Bitget"} ${x.symbol}`;
@@ -85,11 +85,11 @@ function renderChart(x, sl) {
     });
   }
   const candles = x.candles;
-  renderOsc(x.osc || []);
+  if (x.osc) renderOsc(x.osc);
   series.setData(candles.map(c => ({ time: c[0] + tzOffset, open: c[1], high: c[2], low: c[3], close: c[4] })));
   const first = candles.length ? candles[0][0] : 0;
   series.setMarkers(x.history.filter(e => e.kind === "SINYAL" && e.t >= first).map(e => ({
-    time: e.t - 900 + tzOffset, position: e.dir === 1 ? "belowBar" : "aboveBar",
+    time: e.t - (x.bar_sec || 900) + tzOffset, position: e.dir === 1 ? "belowBar" : "aboveBar",
     color: e.dir === 1 ? "#22c55e" : "#ef4444", shape: e.dir === 1 ? "arrowUp" : "arrowDown",
     text: e.dir === 1 ? "AL" : "SAT" })).sort((a, b) => a.time - b.time));
   priceLines.forEach(l => series.removePriceLine(l));

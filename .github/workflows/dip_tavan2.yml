@@ -1,0 +1,53 @@
+name: Altin Dip-Tavan 2 Botu
+
+on:
+  schedule:
+    - cron: "1,6,11,16,21,26,31,36,41,46,51,56 * * * *"  # her 5dk mum kapanışından ~1 dk sonra (UTC)
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Telegram'a deneme mesajı gönder"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dip-tavan2
+  cancel-in-progress: false
+
+jobs:
+  kontrol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main  # sıradaki çalışma önceki çalışmanın kaydettiği güncel durumu alsın
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Sinyal kontrolü
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN_15 }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID_15 || secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID_DIP2 }}
+        run: python dip_tavan2.py --notify ${{ inputs.test && '--test' || '' }}
+      - name: Durumu kaydet
+        run: |
+          if [ -n "$(git status --porcelain dip_tavan2_state.json docs/data/dip_tavan2.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898332+github-actions[bot]@users.noreply.github.com"
+            git add dip_tavan2_state.json docs/data/dip_tavan2.json
+            git commit -m "Dip-Tavan 2 durumu güncellendi [skip ci]"
+            for i in 1 2 3 4 5; do
+              git pull --rebase -X theirs && git push && exit 0
+              git rebase --abort 2>/dev/null || true
+              sleep $((RANDOM % 10 + 3))
+            done
+            echo 'Durum kaydedilemedi'; exit 1
+          fi
+          
