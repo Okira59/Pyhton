@@ -9,6 +9,8 @@
 <style>
   .kasa { height: 260px; }
   .big { font-size: 22px; }
+  #chart { height: 460px; }
+  #t-list td, #t-list th { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -32,6 +34,12 @@
 <div id="error"></div>
 <main>
   <section class="card wide">
+    <h2><span>Grafik <span class="tabs" id="tabs"></span></span>
+      <span class="muted small">▲ AL · ▼ SAT açılış (lot) · ● kapanış (kâr/zarar) · kesikli çizgi: açık işlemin girişi ve stopu</span></h2>
+    <div id="chart"></div>
+  </section>
+
+  <section class="card wide">
     <h2>Sanal hesap <span class="muted small" id="a-since"></span></h2>
     <div class="stats" id="a-stats"></div>
     <p class="muted small" id="a-rule"></p>
@@ -41,13 +49,11 @@
   <section class="card">
     <h2>Açık işlem</h2>
     <div id="a-pos"></div>
-    <h3>Aylık</h3>
-    <table id="a-months"></table>
   </section>
 
   <section class="card">
-    <h2>İşlemler</h2>
-    <div class="scroll"><table id="a-hist"></table></div>
+    <h2>Aylık</h2>
+    <table id="a-months"></table>
   </section>
 
   <section class="card wide">
@@ -56,6 +62,12 @@
     <div id="r-curve" class="kasa"></div>
     <h3>Aylık</h3>
     <table id="r-months"></table>
+  </section>
+
+  <section class="card wide">
+    <h2><span>Açılan ve kapanan işlemler <span class="tabs" id="t-tabs"><a data-k="live">Sanal hesap</a><a data-k="ref">Son 60 gün (geriye dönük)</a></span></span>
+      <span class="muted small" id="t-count"></span></h2>
+    <div class="scroll"><table id="t-list"></table></div>
   </section>
 
   <p class="muted small wide">Sinyaller Dip-Tavan botunun sinyalleridir (aynı giriş ve kademeli kâr/zarar kuralları).
@@ -92,11 +104,82 @@ function statsBlock(a, equity, nextLot) {
 const monthsHtml = ms => !ms.length ? '<tr><td class="muted">Henüz kapanan işlem yok.</td></tr>' :
   "<tr><th>Ay</th><th>Ay başı</th><th>Ay sonu</th><th>Değişim</th></tr>" + ms.slice().reverse().map(m =>
     `<tr><td>${m.month}</td><td>${usd(m.start)}</td><td>${usd(m.end)}</td><td class="${cls(m.pct)}"><b>${m.pct >= 0 ? "+" : ""}${fmt(m.pct, 1)}%${m.pct >= 100 ? " ×2" : ""}</b></td></tr>`).join("");
-const tradesHtml = ts => !ts.length ? '<tr><td class="muted">Henüz kapanan işlem yok. Takip başladıktan sonraki ilk sinyal bekleniyor.</td></tr>' :
-  "<tr><th>Kapanış</th><th>Yön · lot</th><th>Fiyat</th><th>Pip</th><th>Kâr/Zarar</th><th>Kasa</th></tr>" + ts.slice().reverse().map(t =>
-    `<tr><td>${dt(t.close_t)}</td><td>${side(t.dir)} ${fmt(t.lot, 2)}</td>
-     <td>${fmt(t.entry)} → ${fmt(t.exit)}<br><span class="muted small">${t.reason}</span></td>
-     <td>${fmt(t.pips, 1)}</td><td class="${cls(t.pnl)}"><b>${sgn(t.pnl)}</b></td><td>${usd(t.balance)}</td></tr>`).join("");
+// her işlem iki satır: açılış ve kapanış; açık işlem en üstte
+function tradesHtml(ts, open, emptyMsg) {
+  const rows = [];
+  if (open) rows.push(`<tr><td>${dt(open.t)}</td><td>🟡 <b>AÇIK</b></td><td>${side(open.dir)} ${fmt(open.lot, 2)}</td>
+    <td>${fmt(open.entry)}</td><td></td><td class="${cls(open.pnl)}"><b>${sgn(open.pnl)}</b> <span class="muted small">anlık</span></td><td></td></tr>`);
+  ts.slice().reverse().forEach(t => {
+    rows.push(`<tr><td>${dt(t.close_t)}</td><td>${t.pnl >= 0 ? "✅" : "❌"} KAPANDI</td><td>${side(t.dir)} ${fmt(t.lot, 2)}</td>
+      <td>${fmt(t.exit)}<br><span class="muted small">${t.reason}</span></td><td>${t.pips >= 0 ? "+" : ""}${fmt(t.pips, 1)}</td>
+      <td class="${cls(t.pnl)}"><b>${sgn(t.pnl)}</b></td><td>${usd(t.balance)}</td></tr>`);
+    rows.push(`<tr><td>${dt(t.t)}</td><td>${t.dir === 1 ? "🟢" : "🔴"} AÇILDI</td><td>${side(t.dir)} ${fmt(t.lot, 2)}</td>
+      <td>${fmt(t.entry)}</td><td></td><td></td><td></td></tr>`);
+  });
+  if (!rows.length) return `<tr><td class="muted">${emptyMsg}</td></tr>`;
+  return "<tr><th>Zaman</th><th>Olay</th><th>Yön · lot</th><th>Fiyat</th><th>Pip</th><th>Kâr/Zarar</th><th>Kasa</th></tr>" + rows.join("");
+}
+
+// ---- grafik: zaman dilimi butonları, mumlar Bitget TradFi'den canlı ----
+const TFS = { "1dk": ["1m"], "5dk": ["5m"], "15dk": ["15m"], "45dk": ["15m", 45], "1s": ["1h"], "4s": ["4h"], "1g": ["1d"] };
+let tf = TFS[localStorage.getItem("dt2Tf")] ? localStorage.getItem("dt2Tf") : "15dk", tlist = localStorage.getItem("dt2List") || "live";
+let cv = null, lastData = null, lastRows = null, lastView = null;
+async function chartRows() {
+  const [step, resample] = TFS[tf];
+  const rows = await tradfiRows(lastData.symbol, step);
+  return resample ? resampleRows(rows, resample) : rows;
+}
+function drawChart() {
+  const d = lastData, rows = lastRows;
+  if (!d || !rows || !rows.length) return;
+  if (!cv) {
+    const c = LightweightCharts.createChart($("chart"), chartOpts({}));
+    cv = { c, s: c.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444", borderVisible: false }), lines: [] };
+  }
+  cv.s.setData(rows.map(x => ({ time: x[0] + tzOffset, open: x[1], high: x[2], low: x[3], close: x[4] })));
+  const first = rows[0][0];
+  const barOf = s => { let lo = 0, hi = rows.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; rows[m][0] <= s ? lo = m : hi = m - 1; } return rows[lo][0] + tzOffset; };
+  const start = d.account.start_t;
+  const ts = d.ref_trades.filter(t => t.t < start).concat(d.trades);
+  const mk = [];
+  const opened = t => t.t - 1 >= first && mk.push({ time: barOf(t.t - 1), position: t.dir === 1 ? "belowBar" : "aboveBar",
+    color: t.dir === 1 ? "#22c55e" : "#ef4444", shape: t.dir === 1 ? "arrowUp" : "arrowDown", text: (t.dir === 1 ? "AL " : "SAT ") + fmt(t.lot, 2) });
+  ts.forEach(t => {
+    opened(t);
+    if (t.close_t - 1 >= first) mk.push({ time: barOf(t.close_t - 1), position: t.dir === 1 ? "aboveBar" : "belowBar",
+      color: t.pnl >= 0 ? "#22c55e" : "#ef4444", shape: "circle", text: sgn(t.pnl) });
+  });
+  if (d.position) opened(d.position);
+  if (tf === "4s" || tf === "1g") mk.forEach(m => m.text = "");  // uzun zaman diliminde yazılar üst üste biniyor
+  cv.s.setMarkers(mk.sort((a, b) => a.time - b.time));
+  cv.lines.forEach(l => cv.s.removePriceLine(l));
+  cv.lines = [];
+  const o = d.position;
+  if (o) {
+    const add = (price, color, title) => cv.lines.push(cv.s.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, title }));
+    add(o.entry, "#f5c542", "Giriş " + fmt(o.lot, 2) + " lot");
+    if (o.sl !== undefined) add(o.sl, o.trail ? "#22c55e" : "#ef4444", o.trail ? "İz süren stop" : "Zarar durdur");
+  }
+  if (lastView !== tf) { cv.c.timeScale().setVisibleLogicalRange({ from: rows.length - 150, to: rows.length + 3 }); lastView = tf; }
+}
+function renderTrades() {
+  const d = lastData;
+  if (!d) return;
+  document.querySelectorAll("#t-tabs a").forEach(a => a.classList.toggle("active", a.dataset.k === tlist));
+  const live = tlist === "live", ts = live ? d.trades : d.ref_trades;
+  $("t-count").textContent = `${ts.length} kapanan işlem` + (live && d.position ? " · 1 açık" : "");
+  $("t-list").innerHTML = tradesHtml(ts, live ? d.position : null,
+    live ? "Henüz işlem yok. Takip başladıktan sonraki ilk sinyal bekleniyor." : "Bu dönemde işlem yok.");
+}
+$("tabs").innerHTML = Object.keys(TFS).map(n => `<a data-tf="${n}">${n}</a>`).join("");
+const markTab = () => document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("active", a.dataset.tf === tf));
+markTab();
+document.querySelectorAll("#tabs a").forEach(a => a.onclick = async () => {
+  tf = a.dataset.tf; localStorage.setItem("dt2Tf", tf); markTab();
+  const want = tf, rows = await chartRows();
+  if (want === tf) { lastRows = rows; drawChart(); }
+});
+document.querySelectorAll("#t-tabs a").forEach(a => a.onclick = () => { tlist = a.dataset.k; localStorage.setItem("dt2List", tlist); renderTrades(); });
 function posHtml(p, price) {
   if (!p) return '<div class="muted">Açık işlem yok.</div>';
   const stop = p.sl !== undefined ? `<div><span class="muted small">${p.trail ? "🔒 İz süren stop" : "Zarar durdur"}</span><b class="${p.trail ? "green" : "red"}">${fmt(p.sl)}</b></div>` : "";
@@ -118,14 +201,18 @@ startPage("dip_tavan2", d => {
   curve("a-curve", a.curve.concat([[d.close_time, equity]]));
   $("a-pos").innerHTML = posHtml(o, d.price);
   $("a-months").innerHTML = monthsHtml(a.months);
-  $("a-hist").innerHTML = tradesHtml(d.trades);
   const f = d.ref;
   $("r-since").textContent = day(f.start_t) + " – " + day(f.end_t);
   $("r-stats").innerHTML = statsBlock(f);
   curve("r-curve", f.curve);
   $("r-months").innerHTML = monthsHtml(f.months);
+  lastData = d;
+  renderTrades();
+  drawChart();
 }, async x => {
-  const rows = await tradfiRows(x.symbol, "15m");
+  lastData = lastData || x;
+  const want = tf, rows = await chartRows();
+  if (want === tf) lastRows = rows;
   return { price: rows[rows.length - 1][4] };
 });
 </script>
