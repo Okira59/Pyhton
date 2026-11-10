@@ -9,6 +9,9 @@
 <style>
   .kasa { height: 260px; }
   .big { font-size: 22px; }
+  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .twocol .scroll { max-height: 420px; overflow-y: auto; }
+  @media (max-width: 800px) { .twocol { grid-template-columns: 1fr; } }
   #chart { height: 460px; }
   #t-list td, #t-list th { white-space: nowrap; }
 </style>
@@ -62,6 +65,11 @@
     <div id="r-curve" class="kasa"></div>
     <h3>Aylık</h3>
     <table id="r-months"></table>
+    <p class="small" id="r-avg"></p>
+    <div class="twocol">
+      <div><h3>Günlük</h3><div class="scroll"><table id="r-days"></table></div></div>
+      <div><h3>Haftalık</h3><div class="scroll"><table id="r-weeks"></table></div></div>
+    </div>
   </section>
 
   <section class="card wide">
@@ -104,6 +112,24 @@ function statsBlock(a, equity, nextLot) {
 const monthsHtml = ms => !ms.length ? '<tr><td class="muted">Henüz kapanan işlem yok.</td></tr>' :
   "<tr><th>Ay</th><th>Ay başı</th><th>Ay sonu</th><th>Değişim</th></tr>" + ms.slice().reverse().map(m =>
     `<tr><td>${m.month}</td><td>${usd(m.start)}</td><td>${usd(m.end)}</td><td class="${cls(m.pct)}"><b>${m.pct >= 0 ? "+" : ""}${fmt(m.pct, 1)}%${m.pct >= 100 ? " ×2" : ""}</b></td></tr>`).join("");
+const dmy = k => k.slice(8, 10) + "." + k.slice(5, 7);
+const dayName = k => new Date(k + "T12:00:00").toLocaleDateString("tr-TR", { weekday: "short" });
+const weekLabel = k => { const e = new Date(new Date(k + "T12:00:00").getTime() + 6 * 86400000); return dmy(k) + " – " + String(e.getDate()).padStart(2, "0") + "." + String(e.getMonth() + 1).padStart(2, "0"); };
+function periodHtml(ps, label) {
+  if (!ps.length) return '<tr><td class="muted">Henüz kapanan işlem yok.</td></tr>';
+  return `<tr><th>${label === dmy ? "Gün" : "Hafta"}</th><th>İşlem</th><th>Kâr/Zarar</th><th>Değişim</th><th>Kasa</th></tr>` +
+    ps.slice().reverse().map(p => `<tr><td>${label(p.start_day)}${label === dmy ? ` <span class="muted small">${dayName(p.start_day)}</span>` : ""}</td>
+      <td>${p.trades} <span class="muted small">(<span class="green">${p.wins}</span>/<span class="red">${p.trades - p.wins}</span>)</span></td>
+      <td class="${cls(p.pnl)}"><b>${sgn(p.pnl)}</b></td><td class="${cls(p.pct)}">${p.pct >= 0 ? "+" : ""}${fmt(p.pct, 1)}%</td><td>${usd(p.end)}</td></tr>`).join("");
+}
+function avgHtml(f) {
+  if (!f.days.length) return "";
+  const avg = a => a.reduce((s, p) => s + p.pnl, 0) / a.length, pos = a => a.filter(p => p.pnl > 0).length;
+  const ad = avg(f.days), aw = avg(f.weeks);
+  return `Ortalama: günde <b class="${cls(ad)}">${sgn(ad)}</b> (işlem olan ${f.days.length} günün ${pos(f.days)}'i kârlı) · ` +
+    `haftada <b class="${cls(aw)}">${sgn(aw)}</b> (${f.weeks.length} haftanın ${pos(f.weeks)}'i kârlı)`;
+}
+
 // her işlem iki satır: açılış ve kapanış; açık işlem en üstte
 function tradesHtml(ts, open, emptyMsg) {
   const rows = [];
@@ -206,6 +232,9 @@ startPage("dip_tavan2", d => {
   $("r-stats").innerHTML = statsBlock(f);
   curve("r-curve", f.curve);
   $("r-months").innerHTML = monthsHtml(f.months);
+  $("r-avg").innerHTML = avgHtml(f);
+  $("r-days").innerHTML = periodHtml(f.days, dmy);
+  $("r-weeks").innerHTML = periodHtml(f.weeks, weekLabel);
   lastData = d;
   renderTrades();
   drawChart();

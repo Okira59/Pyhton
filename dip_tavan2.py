@@ -54,6 +54,24 @@ def replay(history: list, balance: float, after: int, open_=None, pip_size: floa
     return trades, open_, balance, last
 
 
+def periods(trades: list, freq: str) -> list:
+    """Kapanan işlemleri Türkiye saatine göre güne ("D") ya da haftaya ("W", pazartesi başlar) göre toplar."""
+    out, eq = {}, START_BALANCE
+    for t in trades:
+        ts = pd.Timestamp(t["close_t"], unit="s", tz="UTC").tz_convert("Europe/Istanbul")
+        start = ts.normalize() - pd.Timedelta(days=ts.weekday() if freq == "W" else 0)
+        k = start.strftime("%Y-%m-%d")
+        p = out.setdefault(k, {"start_day": k, "start": eq, "trades": 0, "wins": 0})
+        p["trades"] += 1
+        p["wins"] += t["pnl"] >= 0
+        eq = t["balance"]
+        p["end"] = eq
+    for p in out.values():
+        p["pnl"] = round(p["end"] - p["start"], 2)
+        p["pct"] = round((p["end"] / p["start"] - 1) * 100, 1) if p["start"] > 0 else 0.0
+    return list(out.values())
+
+
 def summary(trades: list, start_t: int) -> dict:
     eq, peak, dd, months = START_BALANCE, START_BALANCE, 0.0, {}
     for t in trades:
@@ -69,6 +87,7 @@ def summary(trades: list, start_t: int) -> dict:
     return {"start_t": start_t, "closed": len(trades), "wins": wins, "losses": len(trades) - wins,
             "balance": round(eq, 2), "max_dd_pct": round(dd * 100, 1),
             "net_pct": round((eq / START_BALANCE - 1) * 100, 1), "months": list(months.values()),
+            "days": periods(trades, "D"), "weeks": periods(trades, "W"),
             "curve": [[start_t, START_BALANCE]] + [[t["close_t"], t["balance"]] for t in trades]}
 
 
