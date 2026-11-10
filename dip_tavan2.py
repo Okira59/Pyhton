@@ -14,10 +14,10 @@ import dashboard
 SOURCE_FILE = os.getenv("SOURCE_FILE", os.path.join("docs", "data", "dip_tavan.json"))
 STATE_FILE = os.getenv("STATE_FILE", "dip_tavan2_state.json")
 START_BALANCE = float(os.getenv("START_BALANCE", "300"))
-LOT_STEP_USD = float(os.getenv("LOT_STEP_USD", "300"))   # her $300 kasa için
-LOT_LOW = float(os.getenv("LOT_LOW", "0.01"))            # kasa < $1000: her $300 için 0.01 lot
-LOT_HIGH = float(os.getenv("LOT_HIGH", "0.02"))          # kasa ≥ $1000: sabit 0.02 lot
-HIGH_FROM = float(os.getenv("HIGH_FROM", "1000"))
+# Kasa basamakları: $1000'a kadar 0.01, $1000+ 0.02, $4000+ 0.03, $6000+ 0.04 ve sonra her $2000'da +0.01
+LOT_TIERS = [(0, 0.01), (1000, 0.02), (4000, 0.03), (6000, 0.04)]
+LOT_EXTRA_EVERY = 2000
+LOT_EXTRA = 0.01
 SPREAD_PIPS = float(os.getenv("SPREAD_PIPS", "0.3"))     # işlem başı maliyet
 OZ_PER_LOT = 100                                         # 1 lot XAUUSD = 100 ons → 0.01 lot = pip başına $1
 
@@ -25,9 +25,11 @@ OZ_PER_LOT = 100                                         # 1 lot XAUUSD = 100 on
 def lot_for(balance: float) -> float:
     if balance <= 0:
         return 0.0
-    if balance >= HIGH_FROM:
-        return LOT_HIGH
-    return round(max(1, math.floor(balance / LOT_STEP_USD)) * LOT_LOW, 2)
+    lot = max(l for b, l in LOT_TIERS if balance >= b)
+    top = LOT_TIERS[-1][0]
+    if balance >= top:
+        lot += math.floor((balance - top) / LOT_EXTRA_EVERY) * LOT_EXTRA
+    return round(lot, 2)
 
 
 def pnl_usd(pips: float, lot: float, pip_size: float) -> float:
@@ -102,8 +104,8 @@ def run():
     dashboard.write("dip_tavan2", {
         "symbol": src["symbol"], "source": src["source"], "close_time": src["close_time"], "price": src["price"],
         "pip_size": pip, "sl_pips": src.get("sl_pips"),
-        "rule": {"start_balance": START_BALANCE, "lot_step_usd": LOT_STEP_USD, "lot_low": LOT_LOW,
-                 "lot_high": LOT_HIGH, "high_from": HIGH_FROM, "spread_pips": SPREAD_PIPS},
+        "rule": {"start_balance": START_BALANCE, "tiers": LOT_TIERS, "extra_every": LOT_EXTRA_EVERY,
+                 "extra": LOT_EXTRA, "spread_pips": SPREAD_PIPS},
         "balance": state["balance"], "next_lot": lot_for(state["balance"]), "position": o,
         "account": acc, "trades": state["trades"][-200:],
         "ref": ref, "ref_trades": ref_trades,
