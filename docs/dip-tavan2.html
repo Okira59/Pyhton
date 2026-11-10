@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dip-Tavan 2 · Sanal Hesap</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+  .kasa { height: 260px; }
+  .big { font-size: 22px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>XAU/USD · Dip-Tavan 2 · $300 Sanal Hesap</h1>
+  <div><span class="price" id="price">–</span> <span class="muted small" id="candle"></span></div>
+  <nav>
+    <a href="index.html">Altın Sinyal</a>
+    <a href="dip-tavan.html">Dip-Tavan</a>
+    <a href="dip-tavan2.html" class="active">Dip-Tavan 2</a>
+    <a href="futures.html">Futures</a>
+    <a href="https://okira59.github.io/gol/">Gol Analiz</a>
+    <a href="https://okira59.github.io/toto/">Spor Toto</a>
+    <a href="https://okira59.github.io/hayvan/">Sürü Takip</a>
+  </nav>
+  <div class="muted small" style="margin-left:auto;text-align:right">
+    Veri: <span id="source">–</span> · Son güncelleme: <span id="updated">–</span><br>
+    Sadece takip · gerçek işlem açılmaz · her 15 dakikada güncellenir
+  </div>
+</header>
+<div id="error"></div>
+<main>
+  <section class="card wide">
+    <h2>Sanal hesap <span class="muted small" id="a-since"></span></h2>
+    <div class="stats" id="a-stats"></div>
+    <p class="muted small" id="a-rule"></p>
+    <div id="a-curve" class="kasa"></div>
+  </section>
+
+  <section class="card">
+    <h2>Açık işlem</h2>
+    <div id="a-pos"></div>
+    <h3>Aylık</h3>
+    <table id="a-months"></table>
+  </section>
+
+  <section class="card">
+    <h2>İşlemler</h2>
+    <div class="scroll"><table id="a-hist"></table></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Karşılaştırma: son 60 günün başında başlasaydı <span class="muted small" id="r-since"></span></h2>
+    <div class="stats" id="r-stats"></div>
+    <div id="r-curve" class="kasa"></div>
+    <h3>Aylık</h3>
+    <table id="r-months"></table>
+  </section>
+
+  <p class="muted small wide">Sinyaller Dip-Tavan botunun sinyalleridir (aynı giriş ve kademeli kâr/zarar kuralları).
+  0.01 lot = 1 ons = pip başına $1. Her işlemden spread için 0,3 pip düşülür; komisyon, swap ve kayma dahil değildir.
+  "Son 60 gün" bölümü geriye dönük hesaplanmıştır. Yatırım tavsiyesi değildir.</p>
+</main>
+<script src="common.js"></script>
+<script>
+const usd = n => (n < 0 ? "-$" : "$") + fmt(Math.abs(n), 2);
+const sgn = n => (n >= 0 ? "+" : "-") + "$" + fmt(Math.abs(n), 2);
+const cls = n => n >= 0 ? "green" : "red";
+const day = t => new Date(t * 1000).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const charts = {};
+function curve(id, pts) {
+  if (!charts[id]) {
+    const c = LightweightCharts.createChart($(id), chartOpts({}));
+    charts[id] = c.addLineSeries({ color: "#f5c542", lineWidth: 2 });
+    charts[id].createPriceLine({ price: 300, color: "#8b93a7", lineWidth: 1, lineStyle: 2, title: "$300" });
+    charts[id].chart = c;
+  }
+  const m = new Map(); pts.forEach(([t, v]) => m.set(t + tzOffset, v));
+  charts[id].setData([...m].sort((a, b) => a[0] - b[0]).map(([time, value]) => ({ time, value })));
+  charts[id].chart.timeScale().fitContent();
+}
+function statsBlock(a, equity, nextLot) {
+  return `<div><span class="muted small">Başlangıç</span><br><b>$300</b></div>
+    <div><span class="muted small">Kasa</span><br><b class="big ${cls(a.balance - 300)}">${usd(a.balance)}</b></div>
+    ${equity !== undefined ? `<div><span class="muted small">Açık işlem dahil</span><br><b class="${cls(equity - 300)}">${usd(equity)}</b></div>` : ""}
+    <div><span class="muted small">Toplam</span><br><b class="${cls(a.net_pct)}">${a.net_pct >= 0 ? "+" : ""}${fmt(a.net_pct, 1)}%</b></div>
+    ${nextLot !== undefined ? `<div><span class="muted small">Sıradaki lot</span><br><b>${fmt(nextLot, 2)}</b></div>` : ""}
+    <div><span class="muted small">İşlem</span><br><b>${a.closed}</b> <span class="muted small">(<span class="green">${a.wins}</span>/<span class="red">${a.losses}</span>)</span></div>
+    <div><span class="muted small">En büyük düşüş</span><br><b class="red">${fmt(a.max_dd_pct, 1)}%</b></div>`;
+}
+const monthsHtml = ms => !ms.length ? '<tr><td class="muted">Henüz kapanan işlem yok.</td></tr>' :
+  "<tr><th>Ay</th><th>Ay başı</th><th>Ay sonu</th><th>Değişim</th></tr>" + ms.slice().reverse().map(m =>
+    `<tr><td>${m.month}</td><td>${usd(m.start)}</td><td>${usd(m.end)}</td><td class="${cls(m.pct)}"><b>${m.pct >= 0 ? "+" : ""}${fmt(m.pct, 1)}%${m.pct >= 100 ? " ×2" : ""}</b></td></tr>`).join("");
+const tradesHtml = ts => !ts.length ? '<tr><td class="muted">Henüz kapanan işlem yok. Takip başladıktan sonraki ilk sinyal bekleniyor.</td></tr>' :
+  "<tr><th>Kapanış</th><th>Yön · lot</th><th>Fiyat</th><th>Pip</th><th>Kâr/Zarar</th><th>Kasa</th></tr>" + ts.slice().reverse().map(t =>
+    `<tr><td>${dt(t.close_t)}</td><td>${side(t.dir)} ${fmt(t.lot, 2)}</td>
+     <td>${fmt(t.entry)} → ${fmt(t.exit)}<br><span class="muted small">${t.reason}</span></td>
+     <td>${fmt(t.pips, 1)}</td><td class="${cls(t.pnl)}"><b>${sgn(t.pnl)}</b></td><td>${usd(t.balance)}</td></tr>`).join("");
+function posHtml(p, price) {
+  if (!p) return '<div class="muted">Açık işlem yok.</div>';
+  const stop = p.sl !== undefined ? `<div><span class="muted small">${p.trail ? "🔒 İz süren stop" : "Zarar durdur"}</span><b class="${p.trail ? "green" : "red"}">${fmt(p.sl)}</b></div>` : "";
+  return `<div class="pos">
+    <div><span class="muted small">Yön · lot</span><b>${side(p.dir)} ${fmt(p.lot, 2)}</b></div>
+    <div><span class="muted small">Giriş · ${dt(p.t)}</span><b>${fmt(p.entry)}</b></div>
+    ${stop}
+    <div><span class="muted small">Anlık kâr/zarar</span><b class="${cls(p.pnl)}">${sgn(p.pnl)}</b></div>
+  </div>`;
+}
+startPage("dip_tavan2", d => {
+  const a = d.account, r = d.rule, o = d.position;
+  if (o) { o.pnl = Math.round(((o.dir * (d.price - o.entry) / d.pip_size) - r.spread_pips) * d.pip_size * o.lot * 100 * 100) / 100; }
+  const equity = d.balance + (o ? o.pnl : 0);
+  $("a-since").textContent = "takip başlangıcı " + day(a.start_t);
+  $("a-stats").innerHTML = statsBlock(a, equity, d.next_lot);
+  $("a-rule").textContent = `Lot kuralı: kasa $${fmt(r.high_from, 0)}'ın altındayken her $${fmt(r.lot_step_usd, 0)} için ${fmt(r.lot_low, 2)} lot, ` +
+    `$${fmt(r.high_from, 0)} ve üstündeyken her $${fmt(r.lot_step_usd, 0)} için ${fmt(r.lot_high, 2)} lot (en az ${fmt(r.lot_low, 2)}). Lot işlem açılırken kasaya göre belirlenir.`;
+  curve("a-curve", a.curve.concat([[d.close_time, equity]]));
+  $("a-pos").innerHTML = posHtml(o, d.price);
+  $("a-months").innerHTML = monthsHtml(a.months);
+  $("a-hist").innerHTML = tradesHtml(d.trades);
+  const f = d.ref;
+  $("r-since").textContent = day(f.start_t) + " – " + day(f.end_t);
+  $("r-stats").innerHTML = statsBlock(f);
+  curve("r-curve", f.curve);
+  $("r-months").innerHTML = monthsHtml(f.months);
+}, async x => {
+  const rows = await tradfiRows(x.symbol, "15m");
+  return { price: rows[rows.length - 1][4] };
+});
+</script>
+</body>
+</html>
