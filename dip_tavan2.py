@@ -16,7 +16,7 @@ STATE_FILE = os.getenv("STATE_FILE", "dip_tavan2_state.json")
 START_BALANCE = float(os.getenv("START_BALANCE", "300"))
 LOT_STEP_USD = float(os.getenv("LOT_STEP_USD", "300"))   # her $300 kasa için
 LOT_LOW = float(os.getenv("LOT_LOW", "0.01"))            # kasa < $1000: her $300 için 0.01 lot
-LOT_HIGH = float(os.getenv("LOT_HIGH", "0.02"))          # kasa ≥ $1000: her $300 için 0.02 lot
+LOT_HIGH = float(os.getenv("LOT_HIGH", "0.02"))          # kasa ≥ $1000: sabit 0.02 lot
 HIGH_FROM = float(os.getenv("HIGH_FROM", "1000"))
 SPREAD_PIPS = float(os.getenv("SPREAD_PIPS", "0.3"))     # işlem başı maliyet
 OZ_PER_LOT = 100                                         # 1 lot XAUUSD = 100 ons → 0.01 lot = pip başına $1
@@ -25,8 +25,9 @@ OZ_PER_LOT = 100                                         # 1 lot XAUUSD = 100 on
 def lot_for(balance: float) -> float:
     if balance <= 0:
         return 0.0
-    per = LOT_HIGH if balance >= HIGH_FROM else LOT_LOW
-    return round(max(1, math.floor(balance / LOT_STEP_USD)) * per, 2)
+    if balance >= HIGH_FROM:
+        return LOT_HIGH
+    return round(max(1, math.floor(balance / LOT_STEP_USD)) * LOT_LOW, 2)
 
 
 def pnl_usd(pips: float, lot: float, pip_size: float) -> float:

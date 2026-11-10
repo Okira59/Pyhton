@@ -114,7 +114,7 @@ startPage("dip_tavan2", d => {
   $("a-since").textContent = "takip başlangıcı " + day(a.start_t);
   $("a-stats").innerHTML = statsBlock(a, equity, d.next_lot);
   $("a-rule").textContent = `Lot kuralı: kasa $${fmt(r.high_from, 0)}'ın altındayken her $${fmt(r.lot_step_usd, 0)} için ${fmt(r.lot_low, 2)} lot, ` +
-    `$${fmt(r.high_from, 0)} ve üstündeyken her $${fmt(r.lot_step_usd, 0)} için ${fmt(r.lot_high, 2)} lot (en az ${fmt(r.lot_low, 2)}). Lot işlem açılırken kasaya göre belirlenir.`;
+    `$${fmt(r.high_from, 0)} ve üstündeyken sabit ${fmt(r.lot_high, 2)} lot (en az ${fmt(r.lot_low, 2)}). Lot işlem açılırken kasaya göre belirlenir.`;
   curve("a-curve", a.curve.concat([[d.close_time, equity]]));
   $("a-pos").innerHTML = posHtml(o, d.price);
   $("a-months").innerHTML = monthsHtml(a.months);
