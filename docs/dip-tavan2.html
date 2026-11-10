@@ -59,6 +59,22 @@
     <table id="a-months"></table>
   </section>
 
+  <section class="card wide" id="how">
+    <h2>Çalışma prensibi</h2>
+    <div class="twocol">
+      <div>
+        <h3>1. Sinyal (giriş)</h3>
+        <div id="h-signal" class="small"></div>
+        <h3>2. Lot ve kâr/zarar hesabı</h3>
+        <div id="h-lot" class="small"></div>
+      </div>
+      <div>
+        <h3>3. Kâr/zarar stopları</h3>
+        <div id="h-stops" class="small"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="card wide">
     <h2>Karşılaştırma: son 60 günün başında başlasaydı <span class="muted small" id="r-since"></span></h2>
     <div class="stats" id="r-stats"></div>
@@ -128,6 +144,45 @@ function avgHtml(f) {
   const ad = avg(f.days), aw = avg(f.weeks);
   return `Ortalama: günde <b class="${cls(ad)}">${sgn(ad)}</b> (işlem olan ${f.days.length} günün ${pos(f.days)}'i kârlı) · ` +
     `haftada <b class="${cls(aw)}">${sgn(aw)}</b> (${f.weeks.length} haftanın ${pos(f.weeks)}'i kârlı)`;
+}
+
+function howHtml(d) {
+  const g = d.signal, st = d.stops, r = d.rule, P = n => fmt(n, n % 1 ? 1 : 0);
+  const tg = p => Math.max(st.trail_min, st.trail_gap - st.trail_step * (p - st.trail_start));
+  const lg = t => Math.max(st.loss_min, st.loss_gap - st.loss_step * (t - st.loss_start));
+  const tMinAt = st.trail_start + (st.trail_gap - st.trail_min) / st.trail_step;
+  $("h-signal").innerHTML = `<p>Bot her 15 dakikalık mum kapanışında 15dk, 30dk, 45dk ve 1s grafiklerde 6 göstergeye bakar.
+    Her gösterge son ${g.lookback} mum içinde "dip" ya da "tavan" diyorsa 1 puan verir:</p>
+    <table><tr><th>Gösterge</th><th>🟢 Dip (AL)</th><th>🔴 Tavan (SAT)</th></tr>
+    <tr><td>StochRSI (14,14,3,3)</td><td>%K tam 0</td><td>%K tam 100</td></tr>
+    <tr><td>Bollinger (${g.bb[0]}, ${g.bb[1]})</td><td>fiyat alt banda değdi</td><td>fiyat üst banda değdi</td></tr>
+    <tr><td>RSI (14)</td><td>${g.rsi_low}'in altına indi ve yükseliyor</td><td>${g.rsi_high}'in üstüne çıktı ve düşüyor</td></tr>
+    <tr><td>MACD DEMA (12,26,9)</td><td>histogram negatif ama yükseliyor</td><td>histogram pozitif ama düşüyor</td></tr>
+    <tr><td>EMA ${g.ema[0]} / ${g.ema[1]}</td><td>EMA ${g.ema[0]} < EMA ${g.ema[1]}, fiyat EMA ${g.ema[0]} üstüne çıktı</td><td>EMA ${g.ema[0]} > EMA ${g.ema[1]}, fiyat EMA ${g.ema[0]} altına indi</td></tr>
+    <tr><td>Hacim</td><td colspan="2">hacim son ${g.vol_period} mum ortalamasının ${fmt(g.vol_spike, 1)} katını geçti</td></tr></table>
+    <p><b>İşlem açılması için:</b> 15dk'da en az <b>${g.min_15m}/6</b> puan olmalı ve bunlardan biri <b>StochRSI</b> olmalı.
+    Ayrıca 30dk, 45dk ve 1s'ten en az <b>ikisinde</b> en az 1 gösterge aynı yönü onaylamalı.
+    Giriş, sinyal mumunun kapanış fiyatından yapılır. Ters yönde sinyal gelirse işlem kapanır ve ters işlem açılır.</p>`;
+  $("h-lot").innerHTML = `<p>Lot, işlem açılırken o anki kasaya göre belirlenir:</p>
+    <table><tr><th>Kasa</th><th>Lot</th></tr>` + r.tiers.map(([b, l], i) => `<tr><td>${i < r.tiers.length - 1 ? `$${fmt(b, 0)} – $${fmt(r.tiers[i + 1][0] - 1, 0)}` : `$${fmt(b, 0)} – $${fmt(b + r.extra_every - 1, 0)}`}</td><td>${fmt(l, 2)}</td></tr>`).join("") +
+    `<tr><td>sonrası</td><td>her $${fmt(r.extra_every, 0)} için +${fmt(r.extra, 2)}</td></tr></table>
+    <p>Kâr/zarar ($) = (pip − ${fmt(r.spread_pips, 1)} spread) × lot × 100. Örneğin 0,01 lotta +20 pip = +$${fmt((20 - r.spread_pips), 2)}, 0,02 lotta = +$${fmt((20 - r.spread_pips) * 2, 2)}.</p>`;
+  const tRows = [st.trail_start, st.trail_start + 5, st.trail_start + 10, st.trail_start + 15, st.trail_start + 20, tMinAt, tMinAt + 10]
+    .map(p => `<tr><td>+${P(p)} pip</td><td>${P(tg(p))} pip</td><td class="green">+${P(p - tg(p))} pip</td></tr>`).join("");
+  const lRows = [st.loss_start, st.loss_start + 3, st.loss_start + 5, st.loss_start + 7]
+    .filter(t => t < st.sl).map(t => { const x = -t + lg(t); return `<tr><td>−${P(t)} pip</td><td>${P(lg(t))} pip</td><td class="${x >= 0 ? "green" : "red"}">${x >= 0 ? "±0 (başabaş)" : `−${P(-x)} pip`}</td></tr>`; }).join("");
+  const e = 4000;
+  $("h-stops").innerHTML = `<p><b>a) Zarar durdur:</b> İşlem açılınca stop girişten <b>${P(st.sl)} pip</b> uzağa konur. Fiyat oraya değerse işlem kapanır. En büyük zarar budur: 0,01 lotta yaklaşık $${fmt(st.sl + r.spread_pips, 0)}.</p>
+    <p><b>b) İz süren stop (kârı korur):</b> Kâr <b>+${P(st.trail_start)} pip</b> olunca stop, ulaşılan en yüksek kârın ${P(st.trail_gap)} pip gerisine taşınır.
+    Kâr her 1 pip arttıkça bu mesafe ${fmt(st.trail_step, 1)} pip daralır, en az ${P(st.trail_min)} pip kalır. Stop sadece kâr yönüne ilerler, geri gelmez.</p>
+    <table><tr><th>Ulaşılan en yüksek kâr</th><th>Stop mesafesi</th><th>Kilitlenen kâr</th></tr>${tRows}</table>
+    <p><b>c) Zarar koruma (toparlanınca çık):</b> Kâr +${P(st.trail_start)}'ye ulaşmadan zarar <b>−${P(st.loss_start)} pip</b> olursa devreye girer.
+    Fiyat en derin zarardan ${P(st.loss_gap)} pip toparlanırsa işlem kapanır. Zarar her 1 pip derinleştikçe bu mesafe ${fmt(st.loss_step, 1)} pip daralır, yani çıkış daha erken olur. Çıkış seviyesi sadece aşağı iner.</p>
+    <table><tr><th>En derin zarar</th><th>Toparlanma mesafesi</th><th>Kapanış seviyesi</th></tr>${lRows}
+    <tr><td>−${P(st.sl)} pip</td><td colspan="2" class="red">zarar durdur çalışır</td></tr></table>
+    <p class="muted"><b>Örnek:</b> ${fmt(e, 0)}'den AL. Stop ${fmt(e - st.sl, 0)}. Fiyat ${fmt(e + 30, 0)}'e çıkarsa (+30) stop ${fmt(e + 30 - tg(30), 0)}'e çıkar, en az +${P(30 - tg(30))} pip kilitlenir.
+    Fiyat ${fmt(e + 30, 0)}'e çıkmadan önce ${fmt(e - 20, 0)}'e düşseydi (−20), zarar koruma devreye girer. Fiyat ${fmt(e - 20 + lg(20), 1)}'e dönünce işlem −${P(20 - lg(20))} pip ile kapanır.</p>
+    <p class="muted">Stoplar 15dk mumların en yüksek/en düşük fiyatına göre kontrol edilir. Aynı mumda iki seviyeye de değilirse önce zarar durdur varsayılır.</p>`;
 }
 
 // her işlem iki satır: açılış ve kapanış; açık işlem en üstte
@@ -236,6 +291,7 @@ startPage("dip_tavan2", d => {
   $("r-days").innerHTML = periodHtml(f.days, dmy);
   $("r-weeks").innerHTML = periodHtml(f.weeks, weekLabel);
   lastData = d;
+  if (d.stops && d.signal) howHtml(d);
   renderTrades();
   drawChart();
 }, async x => {

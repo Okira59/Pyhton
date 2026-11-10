@@ -10,6 +10,7 @@ import os
 import pandas as pd
 
 import dashboard
+import dip_tavan as dt
 
 SOURCE_FILE = os.getenv("SOURCE_FILE", os.path.join("docs", "data", "dip_tavan.json"))
 STATE_FILE = os.getenv("STATE_FILE", "dip_tavan2_state.json")
@@ -125,6 +126,12 @@ def run():
         "pip_size": pip, "sl_pips": src.get("sl_pips"),
         "rule": {"start_balance": START_BALANCE, "tiers": LOT_TIERS, "extra_every": LOT_EXTRA_EVERY,
                  "extra": LOT_EXTRA, "spread_pips": SPREAD_PIPS},
+        "stops": {"sl": dt.SL_PIPS, "trail_start": dt.TRAIL_START, "trail_gap": dt.TRAIL_GAP,
+                  "trail_step": dt.TRAIL_STEP, "trail_min": dt.TRAIL_MIN, "loss_start": dt.LOSS_START,
+                  "loss_gap": dt.LOSS_GAP, "loss_step": dt.LOSS_STEP, "loss_min": dt.LOSS_MIN},
+        "signal": {"min_15m": dt.MIN_SCORE_15M, "lookback": dt.LOOKBACK, "rsi_low": dt.RSI_LOW,
+                   "rsi_high": dt.RSI_HIGH, "ema": [dt.EMA_FAST, dt.EMA_SLOW], "bb": [dt.BB_PERIOD, dt.BB_STD],
+                   "vol_spike": dt.VOLUME_SPIKE, "vol_period": dt.VOLUME_PERIOD},
         "balance": state["balance"], "next_lot": lot_for(state["balance"]), "position": o,
         "account": acc, "trades": state["trades"][-200:],
         "ref": ref, "ref_trades": ref_trades,
