@@ -1,5 +1,14 @@
 {
-  "last_processed": "2026-11-12T00:45:00+00:00",
-  "last_status": "2026-11-12T00:00:00+00:00",
-  "position": null
+  "last_processed": "2026-11-12T01:00:00+00:00",
+  "last_status": "2026-11-12T01:00:00+00:00",
+  "position": {
+    "dir": -1,
+    "entry": 3994.26,
+    "sl": 4019.26,
+    "peak": 0.0,
+    "trail": false,
+    "trough": 0.0,
+    "lx": null,
+    "time": "2026-11-12T01:00:00+00:00"
+  }
 }
