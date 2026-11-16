@@ -272,8 +272,13 @@ def _load_state() -> dict:
         return {}
 
 
+HOURLY_STATUS = os.getenv("HOURLY_STATUS", "0") == "1"  # saatlik durum mesajları kapalı
+
+
 def status_due(state: dict, close_time: pd.Timestamp) -> bool:
     """Saatlik durum mesajı zamanı geldi mi? (her saatin ilk kontrolü, piyasa açıkken)"""
+    if not HOURLY_STATUS:
+        return False
     hour = close_time.floor("h").isoformat()
     if state.get("last_status") == hour:
         return False
