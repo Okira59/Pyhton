@@ -1,6 +1,6 @@
 """Bitget USDT vadeli (futures) 10x simülasyon botu – hacmi en yüksek coinler.
 
-Her çalışmada 24s hacmi en yüksek TOP_N coini (ve açık işlemi olan coinleri) tarar.
+Her çalışmada 24s hacmi en yüksek TOP_N kripto coini (TradFi hisse/endeks/emtia hariç; ve açık işlemi olan coinleri) tarar.
 5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI (0/100), MACD DEMA ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
@@ -77,9 +77,15 @@ def _get(endpoint: str, params: dict):
     raise RuntimeError(f"Bitget isteği başarısız: {endpoint} {params}")
 
 
-def top_symbols(n: int = TOP_N) -> list:
-    """24s USDT hacmine göre en büyük n vadeli kontrat: [(sembol, hacim_milyon_usdt)]."""
-    d = sorted(_get("tickers", {"productType": "USDT-FUTURES"}), key=lambda x: -float(x.get("usdtVolume") or 0))
+def crypto_contracts() -> dict:
+    """Sadece kripto USDT-M kontratları; TradFi (hisse, endeks, emtia, döviz: isRwa=YES) hariç."""
+    return {c["symbol"]: c for c in _get("contracts", {"productType": "USDT-FUTURES"}) if c.get("isRwa") != "YES"}
+
+
+def top_symbols(crypto: dict, n: int = TOP_N) -> list:
+    """24s USDT hacmine göre en büyük n kripto vadeli kontrat: [(sembol, hacim_milyon_usdt)]."""
+    d = sorted((x for x in _get("tickers", {"productType": "USDT-FUTURES"}) if x["symbol"] in crypto),
+               key=lambda x: -float(x.get("usdtVolume") or 0))
     return [(x["symbol"], round(float(x.get("usdtVolume") or 0) / 1e6, 1)) for x in d[:n]]
 
 
@@ -426,7 +432,7 @@ def _send_private(text: str):
 
 def check_and_notify(send: bool = True):
     state = _load_state()
-    top = top_symbols()
+    top = top_symbols(crypto_contracts())
     places = price_places()
     # açık işlemi olan coinler önce işlenir: kapanışlar yeni işlemlere yer açsın
     symbols = list(state["positions"]) + [s for s, _ in top if s not in state["positions"]]
