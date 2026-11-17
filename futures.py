@@ -4,7 +4,7 @@ Her çalışmada 24s hacmi en yüksek TOP_N kripto coini (TradFi hisse/endeks/em
 5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI (0/100), MACD DEMA ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
-zarar %10'a ulaşınca işlem kapatılır; kâr %20'yi geçince kademeli iz süren stop devreye girer. Her işlem isolated $20
+zarar %15'e ulaşınca işlem kapatılır; kâr %20'yi geçince kademeli iz süren stop devreye girer. Her işlem isolated $40
 teminatla açılır; aynı anda en fazla 10 işlem açık olur (doluyken sinyal bildirilir,
 işlem açılmaz; aynı anda gelen sinyallerden puanı en yüksek olanlar önce açılır). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
@@ -40,12 +40,12 @@ MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "4"))  # üst zaman dilimin
 MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman diliminden en az bu kadarı onaylamalı
 
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
-SL_ROE = float(os.getenv("SL_ROE", "10"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %1)
+SL_ROE = float(os.getenv("SL_ROE", "15"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %1,5)
 TRAIL_START_ROE = float(os.getenv("TRAIL_START_ROE", "20"))  # kâr bu ROE'ye ulaşınca iz süren stop başlar
 TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden başlar
 TRAIL_STEP = float(os.getenv("TRAIL_STEP", "0.5"))           # kâr her 1 ROE arttıkça takip mesafesi bu kadar daralır
 TRAIL_MIN_ROE = float(os.getenv("TRAIL_MIN_ROE", "3"))       # en dar takip mesafesi (ROE)
-MARGIN_USD = float(os.getenv("MARGIN_USD", "20"))  # işlem başına isolated teminat ($)
+MARGIN_USD = float(os.getenv("MARGIN_USD", "40"))  # işlem başına isolated teminat ($)
 MAX_OPEN = int(os.getenv("MAX_OPEN", "10"))  # aynı anda en fazla açık işlem
 MAX_SAME_DIR = int(os.getenv("MAX_SAME_DIR", "0")) or MAX_OPEN  # bir yönde en fazla açık işlem (0 = yön limiti yok)
 
