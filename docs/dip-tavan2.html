@@ -168,7 +168,8 @@ function howHtml(d) {
     `<tr><td>sonrası</td><td>her $${fmt(r.extra_every, 0)} için +${fmt(r.extra, 2)}</td></tr></table>
     <p>Kâr/zarar ($) = (pip − ${fmt(r.spread_pips, 1)} spread) × lot × 100. Örneğin 0,01 lotta +20 pip = +$${fmt((20 - r.spread_pips), 2)}, 0,02 lotta = +$${fmt((20 - r.spread_pips) * 2, 2)}.</p>`;
   const tRows = [st.trail_start, st.trail_start + 5, st.trail_start + 10, st.trail_start + 15, st.trail_start + 20, tMinAt, tMinAt + 10]
-    .map(p => `<tr><td>+${P(p)} pip</td><td>${P(tg(p))} pip</td><td class="green">+${P(p - tg(p))} pip</td></tr>`).join("");
+    .map(p => `<tr><td>+${P(p)} pip</td><td>${P(tg(p))} pip</td><td class="${p - tg(p) >= 0 ? "green" : "red"}">${p - tg(p) >= 0 ? "+" : "−"}${P(Math.abs(p - tg(p)))} pip</td></tr>`).join("");
+  const lossOn = st.loss_start < st.sl;
   const lRows = [st.loss_start, st.loss_start + 3, st.loss_start + 5, st.loss_start + 7]
     .filter(t => t < st.sl).map(t => { const x = -t + lg(t); return `<tr><td>−${P(t)} pip</td><td>${P(lg(t))} pip</td><td class="${x >= 0 ? "green" : "red"}">${x >= 0 ? "±0 (başabaş)" : `−${P(-x)} pip`}</td></tr>`; }).join("");
   const e = 4000;
@@ -176,12 +177,13 @@ function howHtml(d) {
     <p><b>b) İz süren stop (kârı korur):</b> Kâr <b>+${P(st.trail_start)} pip</b> olunca stop, ulaşılan en yüksek kârın ${P(st.trail_gap)} pip gerisine taşınır.
     Kâr her 1 pip arttıkça bu mesafe ${fmt(st.trail_step, 1)} pip daralır, en az ${P(st.trail_min)} pip kalır. Stop sadece kâr yönüne ilerler, geri gelmez.</p>
     <table><tr><th>Ulaşılan en yüksek kâr</th><th>Stop mesafesi</th><th>Kilitlenen kâr</th></tr>${tRows}</table>
-    <p><b>c) Zarar koruma (toparlanınca çık):</b> Kâr +${P(st.trail_start)}'ye ulaşmadan zarar <b>−${P(st.loss_start)} pip</b> olursa devreye girer.
+    ${lossOn ? `<p><b>c) Zarar koruma (toparlanınca çık):</b> Kâr +${P(st.trail_start)}'ye ulaşmadan zarar <b>−${P(st.loss_start)} pip</b> olursa devreye girer.
     Fiyat en derin zarardan ${P(st.loss_gap)} pip toparlanırsa işlem kapanır. Zarar her 1 pip derinleştikçe bu mesafe ${fmt(st.loss_step, 1)} pip daralır, yani çıkış daha erken olur. Çıkış seviyesi sadece aşağı iner.</p>
     <table><tr><th>En derin zarar</th><th>Toparlanma mesafesi</th><th>Kapanış seviyesi</th></tr>${lRows}
-    <tr><td>−${P(st.sl)} pip</td><td colspan="2" class="red">zarar durdur çalışır</td></tr></table>
+    <tr><td>−${P(st.sl)} pip</td><td colspan="2" class="red">zarar durdur çalışır</td></tr></table>` :
+    `<p><b>c) Zarar koruma:</b> Başlangıcı (−${P(st.loss_start)} pip) zarar durdurdan (−${P(st.sl)} pip) önce gelmediği için şu an devrede değil.</p>`}
     <p class="muted"><b>Örnek:</b> ${fmt(e, 0)}'den AL. Stop ${fmt(e - st.sl, 0)}. Fiyat ${fmt(e + 30, 0)}'e çıkarsa (+30) stop ${fmt(e + 30 - tg(30), 0)}'e çıkar, en az +${P(30 - tg(30))} pip kilitlenir.
-    Fiyat ${fmt(e + 30, 0)}'e çıkmadan önce ${fmt(e - 20, 0)}'e düşseydi (−20), zarar koruma devreye girer. Fiyat ${fmt(e - 20 + lg(20), 1)}'e dönünce işlem −${P(20 - lg(20))} pip ile kapanır.</p>
+    ${lossOn ? `Fiyat ${fmt(e + 30, 0)}'e çıkmadan önce ${fmt(e - 20, 0)}'e düşseydi (−20), zarar koruma devreye girer. Fiyat ${fmt(e - 20 + lg(20), 1)}'e dönünce işlem −${P(20 - lg(20))} pip ile kapanır.` : `Fiyat önce ${fmt(e - st.sl, 0)}'e düşerse işlem −${P(st.sl)} pip ile kapanır.`}</p>
     <p class="muted">Stoplar 15dk mumların en yüksek/en düşük fiyatına göre kontrol edilir. Aynı mumda iki seviyeye de değilirse önce zarar durdur varsayılır.</p>`;
 }
 

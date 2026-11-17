@@ -13,12 +13,12 @@
 //|        derinleştikçe mesafe daralır); ters sinyalde çevir.       |
 //+------------------------------------------------------------------+
 #property copyright "Okira59"
-#property version   "1.10"
+#property version   "1.11"
 #property description "XAUUSD Dip-Tavan: 15dk/30dk/45dk/1s, StochRSI 0/100 şartı, kademeli iz süren stop ve zarar koruma"
 
 input double InpLots          = 0.01;   // Lot (çoğu aracı kurumda 0.01 lot = 1 pip başına $1)
-input double InpSlPips        = 25;     // Zarar durdur (pip)
-input double InpTrailStart    = 20;     // İz süren stop başlangıcı (pip kâr)
+input double InpSlPips        = 15;     // Zarar durdur (pip)
+input double InpTrailStart    = 10;     // İz süren stop başlangıcı (pip kâr)
 input double InpTrailGap      = 15;     // Başlangıçtaki iz süren stop mesafesi (pip)
 input double InpTrailShrink   = 0.5;    // Kâr 1 pip arttıkça mesafe bu kadar daralır
 input double InpTrailMin      = 3;      // En dar iz süren stop mesafesi (pip)

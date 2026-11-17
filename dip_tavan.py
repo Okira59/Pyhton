@@ -27,9 +27,9 @@ MIN_SCORE_15M = 3       # 15dk'da 6 göstergeden en az 3'ü dip/tavan demeli
 REQUIRED_15M = "STOCHRSI"  # ...ve bunlardan biri StochRSI (son 5 mumda tam 0 / 100) olmalı
 MIN_SCORE_HIGHER = 1    # 30dk/45dk/1s'den en az ikisinde en az 1 gösterge onaylamalı
 
-SL_PIPS = float(os.getenv("SL_PIPS", "25"))  # zarar durdur
+SL_PIPS = float(os.getenv("SL_PIPS", "15"))  # zarar durdur
 # Kademeli iz süren stop: mesafe = max(TRAIL_MIN, TRAIL_GAP - TRAIL_STEP * (zirve - TRAIL_START))
-TRAIL_START = float(os.getenv("TRAIL_START", "20"))
+TRAIL_START = float(os.getenv("TRAIL_START", "10"))
 TRAIL_GAP = float(os.getenv("TRAIL_GAP", "15"))
 TRAIL_STEP = float(os.getenv("TRAIL_STEP", "0.5"))
 TRAIL_MIN = float(os.getenv("TRAIL_MIN", "3"))
@@ -125,8 +125,9 @@ def _open_text(row: pd.Series, direction: int) -> str:
              f"Zarar durdur (-{SL_PIPS:g} pip = -${SL_PIPS * PIP_SIZE:g}): {_sl(direction, c):.2f}",
              f"Sabit kâr al yok: kâr +{TRAIL_START:g} pip ({c + direction * TRAIL_START * PIP_SIZE:.2f}) olunca "
              f"iz süren stop {TRAIL_GAP:g} pip geriden başlar, kâr arttıkça mesafe daralır (en az {TRAIL_MIN:g}).",
-             f"Zarar -{LOSS_START:g} pip ({c - direction * LOSS_START * PIP_SIZE:.2f}) olursa: fiyat dipten "
-             f"{LOSS_GAP:g} pip toparlanınca kapat; zarar derinleştikçe mesafe daralır (en az {LOSS_MIN:g}).",
+             *([f"Zarar -{LOSS_START:g} pip ({c - direction * LOSS_START * PIP_SIZE:.2f}) olursa: fiyat dipten "
+                f"{LOSS_GAP:g} pip toparlanınca kapat; zarar derinleştikçe mesafe daralır (en az {LOSS_MIN:g})."]
+               if LOSS_START < SL_PIPS else []),
              f"🛑 Girişte zarar durdur emri koyun: {_sl(direction, c):.2f}", ""]
     for name in TIMEFRAMES:
         lst = row[f"{key}_list_{name}"]
@@ -177,6 +178,9 @@ def process_events(data: pd.DataFrame, state: dict, since=None, open_text=None, 
         if pos:
             pos.setdefault("trough", 0.0)
             pos.setdefault("lx", None)
+            if not pos.get("trail"):  # zarar durdur değiştiyse açık işlemin stopunu da yeni değere çek
+                sl = _sl(pos["dir"], pos["entry"])
+                pos["sl"] = max(pos["sl"], sl) if pos["dir"] == 1 else min(pos["sl"], sl)
         if pos and t > pd.Timestamp(pos["time"]):
             d, e = pos["dir"], pos["entry"]
             op = float(row["Open"])
