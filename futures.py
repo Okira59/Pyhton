@@ -4,7 +4,7 @@ Her çalışmada 24s hacmi en yüksek TOP_N kripto coini (TradFi hisse/endeks/em
 5dk, 15dk, 30dk, 45dk, 1s ve 4s grafiklerde EMA, Bollinger, RSI, StochRSI (0/100), MACD DEMA ve
 Hacim göstergelerinin yönünü puanlar. 5dk'da güçlü sinyal + üst zaman dilimlerinde
 onay olunca 10x LONG/SHORT işlem açılmış sayılır (coin başına tek işlem). Kaldıraçlı
-zarar %20'ye ulaşınca işlem kapatılır; kâr %20'yi geçince kademeli iz süren stop devreye girer. Her işlem isolated $20
+zarar %10'a ulaşınca işlem kapatılır; kâr %20'yi geçince kademeli iz süren stop devreye girer. Her işlem isolated $20
 teminatla açılır; aynı anda en fazla 10 işlem açık olur (doluyken sinyal bildirilir,
 işlem açılmaz; aynı anda gelen sinyallerden puanı en yüksek olanlar önce açılır). 7/24 çalışır (hafta sonu dahil).
 Gerçek emir gönderilmez; yalnızca Telegram bildirimi ve panel.
@@ -40,7 +40,7 @@ MIN_SCORE_HIGHER = int(os.getenv("MIN_SCORE_HIGHER", "4"))  # üst zaman dilimin
 MIN_HIGHER_TFS = int(os.getenv("MIN_HIGHER_TFS", "4"))      # 5 üst zaman diliminden en az bu kadarı onaylamalı
 
 LEVERAGE = float(os.getenv("LEVERAGE", "10"))
-SL_ROE = float(os.getenv("SL_ROE", "20"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %2)
+SL_ROE = float(os.getenv("SL_ROE", "10"))  # ilk zarar durdur, kaldıraçlı % (10x'te fiyat %1)
 TRAIL_START_ROE = float(os.getenv("TRAIL_START_ROE", "20"))  # kâr bu ROE'ye ulaşınca iz süren stop başlar
 TRAIL_GAP_ROE = float(os.getenv("TRAIL_GAP_ROE", "15"))      # stop, en yüksek kârın bu kadar ROE gerisinden başlar
 TRAIL_STEP = float(os.getenv("TRAIL_STEP", "0.5"))           # kâr her 1 ROE arttıkça takip mesafesi bu kadar daralır
@@ -244,7 +244,8 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
             # temkinli: mum içinde önce mevcut stop kontrol edilir, zirve sonra güncellenir
             exit_price = reason = None
             if (row["Low"] <= sl) if d == 1 else (row["High"] >= sl):
-                exit_price = sl
+                op = float(row["Open"])
+                exit_price = op if (op <= sl if d == 1 else op >= sl) else sl  # mum stopun ötesinde açıldıysa açılıştan
                 reason = (f"İz süren stop (zirve kâr +%{roe(d, pos['entry'], pos['peak']):.1f})" if pos.get("trail")
                           else f"-%{SL_ROE:g} zarar durdur")
             else:
@@ -290,13 +291,14 @@ def live_stop_check(sym: str, dp: int, pos: dict, now: pd.Timestamp):
     bar = next(r_ for r_ in rows if int(r_[0]) == open_ms)
     if pd.Timestamp(open_ms, unit="ms", tz="UTC") + TF_5M <= now:  # son mum zaten kapanmış, normal akışta işlenir
         return None
-    high, low, last = float(bar[2]), float(bar[3]), float(bar[4])
+    op, high, low, last = float(bar[1]), float(bar[2]), float(bar[3]), float(bar[4])
     d, sl = pos["dir"], pos["sl"]
     if not ((low <= sl) if d == 1 else (high >= sl)):
         return None
+    px = op if (op <= sl if d == 1 else op >= sl) else sl
     reason = (f"İz süren stop (zirve kâr +%{roe(d, pos['entry'], pos['peak']):.1f})" if pos.get("trail")
               else f"-%{SL_ROE:g} zarar durdur")
-    return _close_event(sym, dp, pos, {"close_time": now}, sl, f"{reason} · anlık fiyat {last:.{dp}f}")
+    return _close_event(sym, dp, pos, {"close_time": now}, px, f"{reason} · anlık fiyat {last:.{dp}f}")
 
 
 def open_position(sym: str, dp: int, row: pd.Series, sig: int, cs: dict):
