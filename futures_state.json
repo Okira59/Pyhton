@@ -22,17 +22,6 @@
    "margin": 40.0,
    "time": "2026-11-18T15:40:00+00:00"
   },
-  "PLUMEUSDT": {
-   "dir": -1,
-   "entry": 0.01172,
-   "act": 0.011485599999999999,
-   "sl": 0.011895799999999998,
-   "peak": 0.01156,
-   "trail": false,
-   "dp": 5,
-   "margin": 40.0,
-   "time": "2026-11-18T20:30:00+00:00"
-  },
   "PRLUSDT": {
    "dir": 1,
    "entry": 0.071,
@@ -572,18 +561,6 @@
   "FLOKIUSDT": "2026-11-19T00:30:00+00:00"
  },
  "history": [
-  {
-   "t": 1794439200,
-   "kind": "KAPAT",
-   "sym": "GRASSUSDT",
-   "dp": 5,
-   "dir": -1,
-   "entry": 0.44971,
-   "exit": 0.44373275,
-   "pct": 13.29,
-   "reason": "\u0130z s\u00fcren stop (zirve k\u00e2r +%25.5)",
-   "usd": 2.66
-  },
   {
    "t": 1794538800,
    "kind": "KAPAT",
@@ -3579,6 +3556,18 @@
    "dp": 4,
    "dir": 1,
    "price": 0.2131
+  },
+  {
+   "t": 1795048426,
+   "kind": "KAPAT",
+   "sym": "PLUMEUSDT",
+   "dp": 5,
+   "dir": -1,
+   "entry": 0.01172,
+   "exit": 0.011895799999999998,
+   "pct": -15.0,
+   "reason": "-%15 zarar durdur \u00b7 anl\u0131k fiyat 0.01190",
+   "usd": -6.0
   }
  ],
  "last_status": "2026-11-16T19:00:00+00:00",
@@ -3590,10 +3579,10 @@
    "limit": 0,
    "limit_long": 0,
    "limit_short": 0,
-   "closed": 6,
+   "closed": 7,
    "wins": 3,
-   "losses": 3,
-   "usd": -2.68,
+   "losses": 4,
+   "usd": -8.68,
    "trail": 3
   }
  }
