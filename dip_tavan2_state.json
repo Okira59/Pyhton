@@ -1,13 +1,8 @@
 {
  "start_t": 1794339900,
- "last_t": 1795032000,
- "balance": 242.6,
- "open": {
-  "t": 1795032000,
-  "dir": 1,
-  "entry": 3722.53,
-  "lot": 0.01
- },
+ "last_t": 1795047300,
+ "balance": 255.9,
+ "open": null,
  "trades": [
   {
    "t": 1794356100,
@@ -104,6 +99,18 @@
    "reason": "iz süren stop (zirve +13.3 pip)",
    "pnl": -0.4,
    "balance": 242.6
+  },
+  {
+   "t": 1795032000,
+   "dir": 1,
+   "entry": 3722.53,
+   "lot": 0.01,
+   "close_t": 1795047300,
+   "exit": 3736.13,
+   "pips": 13.6,
+   "reason": "iz süren stop (zirve +22.4 pip)",
+   "pnl": 13.3,
+   "balance": 255.9
   }
  ]
 }
