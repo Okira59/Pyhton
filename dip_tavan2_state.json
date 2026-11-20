@@ -1,13 +1,8 @@
 {
  "start_t": 1794339900,
- "last_t": 1795201200,
- "balance": 259.3,
- "open": {
-  "t": 1795201200,
-  "dir": 1,
-  "entry": 3535.22,
-  "lot": 0.01
- },
+ "last_t": 1795202100,
+ "balance": 244.0,
+ "open": null,
  "trades": [
   {
    "t": 1794356100,
@@ -152,6 +147,18 @@
    "reason": "-15 pip zarar durdur",
    "pnl": -15.3,
    "balance": 259.3
+  },
+  {
+   "t": 1795201200,
+   "dir": 1,
+   "entry": 3535.22,
+   "lot": 0.01,
+   "close_t": 1795202100,
+   "exit": 3520.22,
+   "pips": -15.0,
+   "reason": "-15 pip zarar durdur",
+   "pnl": -15.3,
+   "balance": 244.0
   }
  ]
 }
