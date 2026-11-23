@@ -227,6 +227,29 @@ def _close_text(sym: str, dp: int, pos: dict, row: pd.Series, exit_price: float,
             f"  ·  fiyat {r / LEVERAGE:+.2f}%")
 
 
+def update_trail(sym: str, dp: int, pos: dict, extreme: float, t: pd.Timestamp):
+    """Zirveyi günceller; kâr TRAIL_START_ROE'ye ulaştıysa kademeli iz süren stopu kurar/ilerletir.
+    İz süren stop ilk kez devreye girerse TAKIP olayı döner."""
+    d = pos["dir"]
+    peak = max(pos.get("peak", pos["entry"]), extreme) if d == 1 else min(pos.get("peak", pos["entry"]), extreme)
+    pos["peak"] = float(peak)
+    if roe(d, pos["entry"], peak) < TRAIL_START_ROE:
+        return None
+    ts = trail_stop(d, pos["entry"], peak)
+    if (ts > pos["sl"]) if d == 1 else (ts < pos["sl"]):
+        pos["sl"] = float(ts)
+    if pos.get("trail"):
+        return None
+    pos["trail"] = True
+    r = roe(d, pos["entry"], pos["sl"])
+    return (t, "TAKIP",
+            f"🔒 FUTURES – {_coin(sym)} İZ SÜREN STOP DEVREDE ({_side(d)} {LEVERAGE:g}x)\n"
+            f"Kâr +%{roe(d, pos['entry'], peak):.1f} ROE'ye ulaştı.\n"
+            f"Yeni stop: {pos['sl']:.{dp}f} (en az {r:+.1f}% = {usd(r, pos.get('margin', MARGIN_USD)):+.2f}$ kilitli)\n"
+            f"Kademeli takip: şu an zirvenin %{trail_gap(roe(d, pos['entry'], peak)):.1f} ROE gerisinde; kâr arttıkça daralır (en az %{TRAIL_MIN_ROE:g}).",
+            {"sym": sym, "dp": dp, "dir": d, "sl": pos["sl"]})
+
+
 def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, on_signal=None) -> list:
     """Bir coinin mumlarını sırayla işler (coin başına tek işlem). (zaman, tür, mesaj, bilgi) listesi döner.
     on_signal verilirse yeni sinyalde işlem açılmaz, on_signal(row, yön) çağrılır (açma kararı sonra verilir)."""
@@ -241,29 +264,23 @@ def process_events(sym: str, dp: int, data: pd.DataFrame, cs: dict, since=None, 
             if not pos.get("trail"):  # iz süren stop devrede değilse ilk stop güncel SL_ROE'ye göre
                 pos["sl"] = float(levels(pos["dir"], pos["entry"])[1])
             d, sl = pos["dir"], pos["sl"]
+            live = pos.pop("live", None)
+            if live and live["bar"] == dashboard.ts(row["close_time"] - TF_5M):
+                sl = live["sl0"]  # bu mumda stop anlık fiyatla yükseltildi: mum aralığı eski stopla kontrol edilir
             # temkinli: mum içinde önce mevcut stop kontrol edilir, zirve sonra güncellenir
             exit_price = reason = None
             if (row["Low"] <= sl) if d == 1 else (row["High"] >= sl):
                 op = float(row["Open"])
                 exit_price = op if (op <= sl if d == 1 else op >= sl) else sl  # mum stopun ötesinde açıldıysa açılıştan
+            elif sl != pos["sl"] and ((row["Close"] <= pos["sl"]) if d == 1 else (row["Close"] >= pos["sl"])):
+                exit_price = float(row["Close"])  # yükseltilmiş iz süren stopun ötesinde kapandı
+            if exit_price is not None:
                 reason = (f"İz süren stop (zirve kâr +%{roe(d, pos['entry'], pos['peak']):.1f})" if pos.get("trail")
                           else f"-%{SL_ROE:g} zarar durdur")
             else:
-                peak = max(pos.get("peak", pos["entry"]), row["High"]) if d == 1 else min(pos.get("peak", pos["entry"]), row["Low"])
-                pos["peak"] = float(peak)
-                if roe(d, pos["entry"], peak) >= TRAIL_START_ROE:
-                    ts = trail_stop(d, pos["entry"], peak)
-                    if (ts > sl) if d == 1 else (ts < sl):
-                        pos["sl"] = float(ts)
-                    if not pos.get("trail"):
-                        pos["trail"] = True
-                        r = roe(d, pos["entry"], pos["sl"])
-                        events.append((row["close_time"], "TAKIP",
-                                       f"🔒 FUTURES – {_coin(sym)} İZ SÜREN STOP DEVREDE ({_side(d)} {LEVERAGE:g}x)\n"
-                                       f"Kâr +%{roe(d, pos['entry'], peak):.1f} ROE'ye ulaştı.\n"
-                                       f"Yeni stop: {pos['sl']:.{dp}f} (en az {r:+.1f}% = {usd(r, pos.get('margin', MARGIN_USD)):+.2f}$ kilitli)\n"
-                                       f"Kademeli takip: şu an zirvenin %{trail_gap(roe(d, pos['entry'], peak)):.1f} ROE gerisinde; kâr arttıkça daralır (en az %{TRAIL_MIN_ROE:g}).",
-                                       {"sym": sym, "dp": dp, "dir": d, "sl": pos["sl"]}))
+                ev = update_trail(sym, dp, pos, row["High"] if d == 1 else row["Low"], row["close_time"])
+                if ev:
+                    events.append(ev)
             if exit_price is not None:
                 events.append(_close_event(sym, dp, pos, row, exit_price, reason))
                 cs["position"] = pos = None
@@ -293,12 +310,24 @@ def live_stop_check(sym: str, dp: int, pos: dict, now: pd.Timestamp):
         return None
     op, high, low, last = float(bar[1]), float(bar[2]), float(bar[3]), float(bar[4])
     d, sl = pos["dir"], pos["sl"]
-    if not ((low <= sl) if d == 1 else (high >= sl)):
-        return None
-    px = op if (op <= sl if d == 1 else op >= sl) else sl
-    reason = (f"İz süren stop (zirve kâr +%{roe(d, pos['entry'], pos['peak']):.1f})" if pos.get("trail")
-              else f"-%{SL_ROE:g} zarar durdur")
-    return _close_event(sym, dp, pos, {"close_time": now}, px, f"{reason} · anlık fiyat {last:.{dp}f}")
+    live = pos.get("live")
+    if live and live["bar"] == open_ms // 1000:
+        # bu mumda stop daha önce anlık fiyatla yükseltildi: mum aralığı eski stopla, son fiyat yeni stopla
+        hit = ((low <= live["sl0"]) if d == 1 else (high >= live["sl0"])) or ((last <= sl) if d == 1 else (last >= sl))
+        px = live["sl0"] if ((low <= live["sl0"]) if d == 1 else (high >= live["sl0"])) else last
+    else:
+        hit = (low <= sl) if d == 1 else (high >= sl)
+        px = op if (op <= sl if d == 1 else op >= sl) else sl
+    if hit:
+        reason = (f"İz süren stop (zirve kâr +%{roe(d, pos['entry'], pos['peak']):.1f})" if pos.get("trail")
+                  else f"-%{SL_ROE:g} zarar durdur")
+        return _close_event(sym, dp, pos, {"close_time": now}, px, f"{reason} · anlık fiyat {last:.{dp}f}")
+    # stop çalışmadıysa zirve ve iz süren stop, mum kapanışını beklemeden anlık fiyatla güncellenir
+    before = pos["sl"]
+    ev = update_trail(sym, dp, pos, high if d == 1 else low, now)
+    if pos["sl"] != before and not (live and live["bar"] == open_ms // 1000):
+        pos["live"] = {"bar": open_ms // 1000, "sl0": before}
+    return ev
 
 
 def open_position(sym: str, dp: int, row: pd.Series, sig: int, cs: dict):
@@ -479,8 +508,9 @@ def check_and_notify(send: bool = True):
             continue
         if ev:
             emit([ev])
-            state["positions"].pop(sym)
-            cands.pop(sym, None)
+            if ev[1] == "KAPAT":
+                state["positions"].pop(sym)
+                cands.pop(sym, None)
     # 2) adaylar puanı en yüksekten başlayarak açılır (toplam ve yön limiti)
     for sym, (row, sig) in sorted(cands.items(), key=lambda kv: (-strength(kv[1][0], kv[1][1]), kv[1][0]["close_time"])):
         dp, pos = places.get(sym, 2), state["positions"]
