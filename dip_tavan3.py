@@ -151,7 +151,7 @@ def summary(trades: list, start_t: int) -> dict:
 
 def run():
     base = dt.fetch()
-    m1 = _download("1m", "60d")
+    m1 = _closed_only(_download("1m", "60d"), TF_1M)
     m1 = m1[m1.index >= base.index[0]]
     last = base.iloc[-1]
     close_t = dashboard.ts(last["close_time"])
