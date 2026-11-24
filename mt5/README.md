@@ -1,5 +1,7 @@
 # Okira Dip-Tavan – MT5 Expert Advisor
 
+> Sade Forex botu (EMA50/200 + RSI14 + ATR14, günlük 100–200 USD kâr kilidi): [OkiraForex.md](OkiraForex.md)
+
 `OkiraDipTavan.mq5`, Telegram'daki Dip-Tavan botuyla (`dip_tavan.py`) aynı kuralla MT5'te otomatik işlem açar.
 
 - **Göstergeler (her zaman diliminde, son 5 mum):** EMA(9/21), Bollinger(20,2), RSI(14), StochRSI(14,14,3,3), MACD DEMA(12,26,9), hacim (tick hacmi > 20 mum ortalamasının 1,5 katı).
