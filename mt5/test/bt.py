@@ -19,10 +19,10 @@ def load(s):
     df["atr1"] = p.atr
     return df
 
-def run(symbols, lots, dmin=100, dmax=200, lock=True, start=None):
+def run(symbols, lots, dmin=100, dmax=200, lock=True, start=None, end=None):
     data = {s: load(s) for s in symbols}
     if start is None: start = max(d.index[0] for d in data.values())
-    for s in data: data[s] = data[s][data[s].index >= start]
+    for s in data: data[s] = data[s][(data[s].index >= start) & ((data[s].index < end) if end is not None else True)]
     closes = pd.DataFrame({s: d.c for s, d in data.items()}).ffill()
     times = sorted(set().union(*[d.index for d in data.values()]))
     def conv(s, t):   # quote currency -> USD

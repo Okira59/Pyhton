@@ -4,15 +4,17 @@
 
 ## Kural
 - **Yön:** EMA50 > EMA200 → sadece AL; EMA50 < EMA200 → sadece SAT.
-- **Giriş:** AL = RSI(14) 40'ı aşağıdan yukarı keser; SAT = RSI(14) 60'ı yukarıdan aşağı keser.
+- **Giriş:** AL = RSI(14) 30'u aşağıdan yukarı keser; SAT = RSI(14) 70'i yukarıdan aşağı keser.
 - **Çıkış:** Zarar durdur = ATR(14) × 1,5; Kâr al = ATR(14) × 3.
-- Karar sadece kapanmış mumda verilir (varsayılan 1 saatlik).
+- Karar sadece kapanmış mumda verilir.
+- **Varsayılan:** sadece XAUUSD (altın), 4 saatlik (H4), 0,05 lot. Geriye dönük testte en sağlam sonuç bu ayarla çıktı; döviz paritelerinde bu kurallar zarar etti.
 - **Aynı anda tek işlem** (`InpMaxOpen` = 1): bir işlem açıkken başka sembolde sinyal gelse bile yeni işlem açılmaz; açık işlem kapanınca sıradaki sinyal beklenir.
-- **Lot uyarısı:** 0,01 lot EURUSD'de bir işlem genelde 1–5 USD kazandırır; 100 USD günlük hedef için lot büyük olmalı (ör. 0,5–1 lot). Lot büyüdükçe zarar da aynı oranda büyür.
+- **Lot uyarısı:** 0,05 lot altında 1 USD fiyat hareketi = 5 USD. Pariteleri seçerseniz 0,05 lot EURUSD'de 1 pip = 0,5 USD olur; günlük 100 USD hedefe nadiren ulaşılır.
 
 ## Semboller
 | `InpSymbols` | Anlamı |
 |---|---|
+| `XAUUSD` (varsayılan) | Sadece altın |
 | `EURUSD,GBPUSD,XAUUSD` | Sadece bu liste |
 | `*` | MT5 **Piyasa Gözlemi**'ndeki tüm semboller |
 | `FOREX` | Kurumdaki tüm döviz pariteleri (majör, çapraz, egzotik) + XAU/XAG/XPT/XPD |

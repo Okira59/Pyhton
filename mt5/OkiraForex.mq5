@@ -9,15 +9,15 @@
 #include <Trade\Trade.mqh>
 
 //==================== AYARLAR (tek yer) ============================
-input string          InpSymbols     = "EURUSD,GBPUSD,USDJPY,XAUUSD"; // Semboller: virgüllü liste | * = Piyasa Gözlemi | FOREX = kurumdaki tüm döviz+metal
+input string          InpSymbols     = "XAUUSD";   // Semboller: virgüllü liste | * = Piyasa Gözlemi | FOREX = kurumdaki tüm döviz+metal
 input string          InpSuffix      = "";        // Kurum sembol eki (ör. .m, -pro). Yoksa boş
-input ENUM_TIMEFRAMES InpTF          = PERIOD_H1; // Zaman dilimi
-input double          InpLots        = 0.01;      // Lot (her işlem)
+input ENUM_TIMEFRAMES InpTF          = PERIOD_H4; // Zaman dilimi
+input double          InpLots        = 0.05;      // Lot (her işlem)
 input int             InpEmaFast     = 50;        // Hızlı EMA
 input int             InpEmaSlow     = 200;       // Yavaş EMA
 input int             InpRsiPeriod   = 14;        // RSI periyodu
-input double          InpRsiBuy      = 40;        // AL: yükseliş trendinde RSI bu seviyeyi yukarı keserse
-input double          InpRsiSell     = 60;        // SAT: düşüş trendinde RSI bu seviyeyi aşağı keserse
+input double          InpRsiBuy      = 30;        // AL: yükseliş trendinde RSI bu seviyeyi yukarı keserse
+input double          InpRsiSell     = 70;        // SAT: düşüş trendinde RSI bu seviyeyi aşağı keserse
 input int             InpAtrPeriod   = 14;        // ATR periyodu
 input double          InpSlAtr       = 1.5;       // Zarar durdur = ATR x bu
 input double          InpTpAtr       = 3.0;       // Kâr al = ATR x bu
