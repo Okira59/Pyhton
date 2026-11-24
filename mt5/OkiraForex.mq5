@@ -21,6 +21,7 @@ input double          InpRsiSell     = 60;        // SAT: düşüş trendinde RS
 input int             InpAtrPeriod   = 14;        // ATR periyodu
 input double          InpSlAtr       = 1.5;       // Zarar durdur = ATR x bu
 input double          InpTpAtr       = 3.0;       // Kâr al = ATR x bu
+input int             InpMaxOpen     = 1;         // Aynı anda en fazla kaç işlem (tüm semboller toplamı). 1 = açık işlem kapanmadan yenisi açılmaz
 input double          InpDailyMin    = 100;       // Günlük kâr kilidi ALT (USD): ulaşınca yeni işlem yok, sistem durur
 input double          InpDailyMax    = 200;       // Günlük kâr kilidi ÜST (USD): açık işlemler toplam bu kâra ulaşınca kapanır
 input ulong           InpMagic       = 590100;    // Magic number (diğer EA/elle işlemlerden ayırır)
@@ -132,6 +133,17 @@ bool HasPosition(string s)
    return false;
 }
 
+int CountOpen()
+{
+   int n = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong t = PositionGetTicket(i);
+      if(t != 0 && PositionGetInteger(POSITION_MAGIC) == (long)InpMagic) n++;
+   }
+   return n;
+}
+
 //--- kilit / manuel açılış
 void Lock(int state, string why)
 {
@@ -218,23 +230,23 @@ void CheckDailyLock()
 //--- sinyal ve işlem
 bool Buf(int h, int shift, double &v) { double b[1]; if(CopyBuffer(h, 0, shift, 1, b) != 1) return false; v = b[0]; return true; }
 
-void CheckSymbol(int i)
+bool CheckSymbol(int i)
 {
    string s = syms[i];
    datetime bar = iTime(s, InpTF, 0);
-   if(bar == 0 || bar == lastBar[i]) return;
+   if(bar == 0 || bar == lastBar[i]) return false;
 
    double ef, es, r1, r2, atr;
-   if(!Buf(hFast[i], 1, ef) || !Buf(hSlow[i], 1, es) || !Buf(hRsi[i], 1, r1) || !Buf(hRsi[i], 2, r2) || !Buf(hAtr[i], 1, atr)) return;
+   if(!Buf(hFast[i], 1, ef) || !Buf(hSlow[i], 1, es) || !Buf(hRsi[i], 1, r1) || !Buf(hRsi[i], 2, r2) || !Buf(hAtr[i], 1, atr)) return false;
    lastBar[i] = bar;   // sadece kapanmış mumda bir kez karar ver
 
-   if(LockState() != 0 || HasPosition(s) || atr <= 0) return;
+   if(LockState() != 0 || CountOpen() >= InpMaxOpen || HasPosition(s) || atr <= 0) return false;
    bool hedging = AccountInfoInteger(ACCOUNT_MARGIN_MODE) == ACCOUNT_MARGIN_MODE_RETAIL_HEDGING;
-   if(!hedging && PositionSelect(s)) return;   // netting hesapta başka işlemin pozisyonunu değiştirmesin
+   if(!hedging && PositionSelect(s)) return false;   // netting hesapta başka işlemin pozisyonunu değiştirmesin
 
    bool buy  = ef > es && r2 < InpRsiBuy  && r1 >= InpRsiBuy;
    bool sell = ef < es && r2 > InpRsiSell && r1 <= InpRsiSell;
-   if(!buy && !sell) return;
+   if(!buy && !sell) return false;
 
    int    dg   = (int)SymbolInfoInteger(s, SYMBOL_DIGITS);
    double pt   = SymbolInfoDouble(s, SYMBOL_POINT);
@@ -261,6 +273,7 @@ void CheckSymbol(int i)
    }
    PrintFormat("%s %s %.2f lot | RSI %.1f | ATR %s | %s", buy ? "AL" : "SAT", s, lots, r1,
                DoubleToString(atr, dg), ok ? "açıldı" : trade.ResultRetcodeDescription());
+   return ok;
 }
 
 //--- MT5 olayları
