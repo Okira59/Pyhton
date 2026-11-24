@@ -31,7 +31,7 @@ CTrade   trade;
 string   syms[];
 int      hFast[], hSlow[], hRsi[], hAtr[];
 datetime lastBar[];
-string   gvLock, gvStart, gvLockStart;
+string   gvLock, gvStart, gvLockStart, gvCloseAll;
 const string BTN = "OkiraForexBtn";
 
 //--- kilit durumu: 0 = çalışıyor, 1 = günlük hedef ile durdu, 2 = elle durduruldu
@@ -148,6 +148,7 @@ void Unlock()
    GlobalVariableSet(gvLock, 0);
    GlobalVariableSet(gvStart, (double)TimeTradeServer());   // kâr sayacı bu andan itibaren sıfırdan başlar
    GlobalVariableDel(gvLockStart);
+   GlobalVariableDel(gvCloseAll);
    Print("OkiraForex elle tekrar BAŞLATILDI.");
    UpdateButton();
 }
@@ -199,8 +200,13 @@ void CheckDailyLock()
 
    if(LockState() == 1 && n > 0)
    {
-      if(total >= InpDailyMax)      CloseAll(StringFormat("günlük kâr üst sınıra ulaştı (%.2f USD)", total));
-      else if(total < InpDailyMin)  CloseAll(StringFormat("kâr %.0f USD altına düşmesin diye (%.2f USD)", InpDailyMin, total));
+      if(total >= InpDailyMax)      { GlobalVariableSet(gvCloseAll, 1); Print(StringFormat("Günlük kâr üst sınıra ulaştı (%.2f USD)", total)); }
+      else if(total < InpDailyMin)  { GlobalVariableSet(gvCloseAll, 1); Print(StringFormat("Kâr %.0f USD altına düşmesin diye (%.2f USD)", InpDailyMin, total)); }
+   }
+   if(GlobalVariableCheck(gvCloseAll))   // karar verildiyse tüm pozisyonlar kapanana kadar dene
+   {
+      if(n > 0) CloseAll("günlük kâr kilidi");
+      else      GlobalVariableDel(gvCloseAll);
    }
 
    st = LockState();
@@ -263,7 +269,7 @@ int OnInit()
    if(InpDailyMin <= 0 || InpDailyMax < InpDailyMin) { Print("Hata: InpDailyMax >= InpDailyMin > 0 olmalı"); return INIT_PARAMETERS_INCORRECT; }
 
    string key = StringFormat("OkiraForex_%I64d_%I64u_", AccountInfoInteger(ACCOUNT_LOGIN), InpMagic);
-   gvLock = key + "kilit"; gvStart = key + "baslangic"; gvLockStart = key + "kilitbaslangic";
+   gvLock = key + "kilit"; gvStart = key + "baslangic"; gvLockStart = key + "kilitbaslangic"; gvCloseAll = key + "hepsinikapat";
    if(!GlobalVariableCheck(gvStart)) GlobalVariableSet(gvStart, 0);
 
    trade.SetExpertMagicNumber(InpMagic);
