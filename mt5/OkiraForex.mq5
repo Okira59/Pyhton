@@ -141,6 +141,11 @@ int CountOpen()
       ulong t = PositionGetTicket(i);
       if(t != 0 && PositionGetInteger(POSITION_MAGIC) == (long)InpMagic) n++;
    }
+   for(int i = OrdersTotal() - 1; i >= 0; i--)   // gönderilmiş ama henüz dolmamış emirler de sayılır
+   {
+      ulong o = OrderGetTicket(i);
+      if(o != 0 && OrderGetInteger(ORDER_MAGIC) == (long)InpMagic) n++;
+   }
    return n;
 }
 
