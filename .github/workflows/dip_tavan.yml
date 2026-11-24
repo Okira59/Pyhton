@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: dip-tavan
@@ -38,14 +39,18 @@ jobs:
         run: python dip_tavan.py --notify ${{ inputs.test && '--test' || '' }}
       - name: Dip-Tavan 2 sanal hesap takibi
         run: python dip_tavan2.py
-      - name: Dip-Tavan 3 kesişme LONG/SHORT takibi
-        run: python dip_tavan3.py
+      - name: Dip-Tavan 3 sürekli takip çalışıyor mu? (değilse başlat)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh run list -w dip_tavan3.yml --json status -q '[.[] | select(.status != "completed")] | length')
+          [ "$n" = "0" ] && gh workflow run dip_tavan3.yml --ref main || echo "Dip-Tavan 3 çalışıyor ($n)"
       - name: Durumu kaydet
         run: |
-          if [ -n "$(git status --porcelain dip_tavan_state.json docs/data/dip_tavan.json dip_tavan2_state.json docs/data/dip_tavan2.json dip_tavan3_state.json docs/data/dip_tavan3.json)" ]; then
+          if [ -n "$(git status --porcelain dip_tavan_state.json docs/data/dip_tavan.json dip_tavan2_state.json docs/data/dip_tavan2.json)" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898332+github-actions[bot]@users.noreply.github.com"
-            git add dip_tavan_state.json docs/data/dip_tavan.json dip_tavan2_state.json docs/data/dip_tavan2.json dip_tavan3_state.json docs/data/dip_tavan3.json
+            git add dip_tavan_state.json docs/data/dip_tavan.json dip_tavan2_state.json docs/data/dip_tavan2.json
             git commit -m "Dip-tavan durumu güncellendi [skip ci]"
             for i in 1 2 3 4 5; do
               git pull --rebase -X theirs && git push && exit 0

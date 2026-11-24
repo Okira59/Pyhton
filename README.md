@@ -79,7 +79,10 @@ Dip-Tavan ile aynı göstergeler. Dip (tavan) koşulu son 6 adet 15dk mum içind
 kestiği anda **LONG (SHORT)** açılır; ters kesişme işlemi çevirir. Her işlem **0,03 lot** (pip başına $3).
 Çıkış (1dk mumlarla): **-5 pip** zarar durdur; kâr **+7 pip** olunca stop +7'ye kilitlenir (ne olursa olsun +7 korunur),
 sonra kademeli iz süren stop (zirvenin 5 pip gerisi, kâr her 1 pip arttıkça 0,25 pip daralır, en az 2). Sanal takiptir,
-gerçek işlem açmaz, Telegram'a yazmaz. Panel: https://okira59.github.io/Pyhton/dip-tavan3.html · APK: `diptavan3` flavor.
+gerçek işlem açmaz, Telegram'a yazmaz.
+Sürekli çalışır (`dip_tavan3.yml`, `python dip_tavan3.py --loop`): 20 sn'de bir veri yenilenir, 15dk kapanır kapanmaz
+kesişme aranır, stoplar her kapanan 1dk mumda işlenir; olay olunca hemen kaydedilir. ~5,7 saatte bir kendini yeniden
+başlatır, durursa 15 dk'lık Dip-Tavan iş akışı yeniden başlatır. Panel: https://okira59.github.io/Pyhton/dip-tavan3.html · APK: `diptavan3` flavor.
 Ayarlar: `LOT`, `SL_PIPS`, `LOCK_PIPS`, `TRAIL_GAP`, `TRAIL_STEP`, `TRAIL_MIN`, `SPREAD_PIPS`.
 
 ## Web paneli

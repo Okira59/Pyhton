@@ -9,6 +9,9 @@ Gerçek işlem açmaz, Telegram'a mesaj göndermez; panel verisini docs/data/dip
 """
 import json
 import os
+import subprocess
+import sys
+import time
 
 import pandas as pd
 
@@ -157,9 +160,9 @@ def summary(trades: list, start_t: int) -> dict:
             "days": periods(trades, "D"), "weeks": periods(trades, "W"), "curve": curve}
 
 
-def run():
-    base = dt.fetch()
-    m1 = _closed_only(_download("1m", "60d"), TF_1M)
+def run(base=None, m1=None):
+    base = dt.fetch() if base is None else base
+    m1 = _closed_only(_download("1m", "60d"), TF_1M) if m1 is None else m1
     m1 = m1[m1.index >= base.index[0]]
     last = base.iloc[-1]
     close_t = dashboard.ts(last["close_time"])
@@ -206,7 +209,53 @@ def run():
     })
     print(f"Dip-Tavan 3: canlı {acc['closed']} işlem {acc['usd']:+.2f}$, açık: {bool(live_pos)}; "
           f"son 60 gün {ref['closed']} işlem {ref['usd']:+.2f}$ (0.03 lot)")
+    return len(kept), live_pos and (live_pos["t"], live_pos["sl"])
+
+
+FILES = [STATE_FILE, "docs/data/dip_tavan3.json"]
+
+
+def push() -> bool:
+    git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True)
+    if not os.getenv("GITHUB_ACTIONS"):
+        return True
+    if not git("status", "--porcelain", *FILES).stdout.strip():
+        return True
+    git("add", *FILES)
+    git("commit", "-m", "Dip-Tavan 3 durumu güncellendi [skip ci]")
+    for _ in range(5):
+        if git("pull", "--rebase", "-X", "theirs").returncode == 0 and git("push").returncode == 0:
+            return True
+        git("rebase", "--abort")
+        time.sleep(5)
+    print("Dip-Tavan 3: durum gönderilemedi", flush=True)
+    return False
+
+
+def loop(every: float, minutes: float, heartbeat: float = 120):
+    """Sürekli takip: 15dk kapanır kapanmaz kesişme aranır, stoplar her dakika işlenir;
+    olay/stop değişince hemen, değilse `heartbeat` saniyede bir kaydedilir."""
+    end = time.time() + minutes * 60
+    base = dt.fetch()
+    m1 = _closed_only(_download("1m", "60d"), TF_1M)
+    key, pushed = None, 0.0
+    while time.time() < end:
+        t0 = time.time()
+        try:
+            if pd.Timestamp.now(tz="UTC") >= base.index[-1] + TF_15M:
+                base = dt.fetch()
+            tail = _closed_only(_download("1m", "1d"), TF_1M)
+            m1 = pd.concat([m1, tail[tail.index > m1.index[-1]]])
+            k = run(base, m1)
+            if (k != key or time.time() - pushed >= heartbeat) and push():
+                key, pushed = k, time.time()
+        except Exception as ex:  # ağ/veri hatasında döngü durmasın
+            print(f"Dip-Tavan 3 hata: {ex}", flush=True)
+        time.sleep(max(1.0, every - (time.time() - t0)))
 
 
 if __name__ == "__main__":
-    run()
+    if "--loop" in sys.argv:
+        loop(float(os.getenv("LOOP_SECONDS", "20")), float(os.getenv("LOOP_MINUTES", "340")))
+    else:
+        run()
