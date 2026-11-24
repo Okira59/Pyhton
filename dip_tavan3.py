@@ -74,6 +74,17 @@ def _close(pos: dict, t, px: float, reason: str) -> dict:
             "pct": round(pos["dir"] * (px - pos["entry"]) / pos["entry"] * 100, 3), "reason": reason}
 
 
+def _trail(pos: dict, px: float) -> bool:
+    d, e = pos["dir"], pos["entry"]
+    pos["peak"] = max(pos["peak"], d * (px - e) / PIP_SIZE)
+    if pos["peak"] < LOCK_PIPS:
+        return False
+    pos["lock"] = True
+    want = max(LOCK_PIPS, pos["peak"] - trail_gap(pos["peak"]))
+    pos["sl"] = e + d * max(d * (pos["sl"] - e) / PIP_SIZE, want) * PIP_SIZE
+    return True
+
+
 def simulate(base: pd.DataFrame, sig: pd.Series, m1: pd.DataFrame):
     """Sinyalleri 15dk kapanışında açar, stopları 1dk mumlarla izler; (olaylar, açık işlem) döner."""
     events, pos = [], None
@@ -98,16 +109,13 @@ def simulate(base: pd.DataFrame, sig: pd.Series, m1: pd.DataFrame):
             continue
         d, e, t_end = pos["dir"], pos["entry"], T[i] + TF_1M
         hi, lo = (H[i], L[i]) if d == 1 else (L[i], H[i])
+        _trail(pos, O[i])  # dakikanın ilk fiyatı açılış: kilit/iz önce ona göre güncellenir
         if d * (lo - pos["sl"]) <= 0:  # aynı dakikada önce stop varsayılır
             px = pos["sl"] if d * (O[i] - pos["sl"]) > 0 else O[i]
             events.append(_close(pos, t_end, px, _stop_reason(pos)))
             pos = None
             continue
-        pos["peak"] = max(pos["peak"], d * (hi - e) / PIP_SIZE)
-        if pos["peak"] >= LOCK_PIPS:
-            pos["lock"] = True
-            want = max(LOCK_PIPS, pos["peak"] - trail_gap(pos["peak"]))
-            pos["sl"] = e + d * max(d * (pos["sl"] - e) / PIP_SIZE, want) * PIP_SIZE
+        if _trail(pos, hi):
             if d * (C[i] - pos["sl"]) <= 0:
                 events.append(_close(pos, t_end, pos["sl"], _stop_reason(pos)))
                 pos = None
