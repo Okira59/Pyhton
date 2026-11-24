@@ -77,7 +77,7 @@ GitHub Actions: `.github/workflows/dip_tavan.yml`, secret `TELEGRAM_BOT_TOKEN_15
 ## Üçüncü bot: Dip-Tavan 3 (dip_tavan3.py)
 Dip-Tavan ile aynı göstergeler. Dip (tavan) koşulu son 6 adet 15dk mum içinde oluştuysa, 15dk kapanış EMA9'u yukarı (aşağı)
 kestiği anda **LONG (SHORT)** açılır; ters kesişme işlemi çevirir. Her işlem **0,03 lot** (pip başına $3).
-Çıkış (1dk mumlarla): **-3 pip** zarar durdur; kâr **+7 pip** olunca stop +7'ye kilitlenir (ne olursa olsun +7 korunur),
+Çıkış (1dk mumlarla): **-5 pip** zarar durdur; kâr **+7 pip** olunca stop +7'ye kilitlenir (ne olursa olsun +7 korunur),
 sonra kademeli iz süren stop (zirvenin 5 pip gerisi, kâr her 1 pip arttıkça 0,25 pip daralır, en az 2). Sanal takiptir,
 gerçek işlem açmaz, Telegram'a yazmaz.
 Sürekli çalışır (`dip_tavan3.yml`, `python dip_tavan3.py --loop`): 20 sn'de bir veri yenilenir, 15dk kapanır kapanmaz
