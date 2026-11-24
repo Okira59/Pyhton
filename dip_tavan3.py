@@ -173,7 +173,9 @@ def run():
     kept = state["events"]
     last_t = max([e["t"] for e in kept], default=start)
     # kaydedilmiş olaylar sabit kalır; yalnızca sonrası eklenir (takip başlangıcından önce açılanlar sayılmaz)
-    kept += [e for e in events if e["t"] > last_t and e.get("open_t", e["t"]) >= start]
+    seen = {(e["t"], e["kind"], e["dir"]) for e in kept if e["t"] == last_t}  # aynı dakikada stop + yeni giriş olabilir
+    kept += [e for e in events if (e["t"] > last_t or (e["t"] == last_t and (e["t"], e["kind"], e["dir"]) not in seen))
+             and e.get("open_t", e["t"]) >= start]
     state["events"] = kept
     live_pos = pos if pos and pos["t"] >= start else None
     state["position"] = live_pos
