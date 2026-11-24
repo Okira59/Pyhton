@@ -9,9 +9,10 @@
 <style>
   .kasa { height: 240px; }
   .big { font-size: 22px; }
-  .twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .twocol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
   .twocol .scroll { max-height: 420px; overflow-y: auto; }
-  @media (max-width: 800px) { .twocol { grid-template-columns: 1fr; } main { grid-template-columns: 1fr; padding: 12px; } header { padding: 12px; gap: 10px; } }
+  @media (max-width: 1100px) { main { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 800px) { .twocol { grid-template-columns: minmax(0, 1fr); } main { grid-template-columns: minmax(0, 1fr); padding: 12px; } header { padding: 12px; gap: 10px; } }
   #chart { height: 440px; }
   #t-list td, #t-list th { white-space: nowrap; }
   .tabs a { cursor: pointer; margin-left: 4px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); }
