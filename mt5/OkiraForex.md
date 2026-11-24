@@ -6,7 +6,9 @@
 - **Yön:** EMA50 > EMA200 → sadece AL; EMA50 < EMA200 → sadece SAT.
 - **Giriş:** AL = RSI(14) 40'ı aşağıdan yukarı keser; SAT = RSI(14) 60'ı yukarıdan aşağı keser.
 - **Çıkış:** Zarar durdur = ATR(14) × 1,5; Kâr al = ATR(14) × 3.
-- Karar sadece kapanmış mumda verilir (varsayılan 1 saatlik). Her sembolde aynı anda en fazla 1 işlem.
+- Karar sadece kapanmış mumda verilir (varsayılan 1 saatlik).
+- **Aynı anda tek işlem** (`InpMaxOpen` = 1): bir işlem açıkken başka sembolde sinyal gelse bile yeni işlem açılmaz; açık işlem kapanınca sıradaki sinyal beklenir.
+- **Lot uyarısı:** 0,01 lot EURUSD'de bir işlem genelde 1–5 USD kazandırır; 100 USD günlük hedef için lot büyük olmalı (ör. 0,5–1 lot). Lot büyüdükçe zarar da aynı oranda büyür.
 
 ## Semboller
 | `InpSymbols` | Anlamı |
