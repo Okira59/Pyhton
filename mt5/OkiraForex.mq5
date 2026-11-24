@@ -223,6 +223,8 @@ void CheckSymbol(int i)
    lastBar[i] = bar;   // sadece kapanmış mumda bir kez karar ver
 
    if(LockState() != 0 || HasPosition(s) || atr <= 0) return;
+   bool hedging = AccountInfoInteger(ACCOUNT_MARGIN_MODE) == ACCOUNT_MARGIN_MODE_RETAIL_HEDGING;
+   if(!hedging && PositionSelect(s)) return;   // netting hesapta başka işlemin pozisyonunu değiştirmesin
 
    bool buy  = ef > es && r2 < InpRsiBuy  && r1 >= InpRsiBuy;
    bool sell = ef < es && r2 > InpRsiSell && r1 <= InpRsiSell;
