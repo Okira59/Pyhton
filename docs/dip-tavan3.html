@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dip-Tavan 3 · Kesişme LONG/SHORT</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="style.css">
+<style>
+  .kasa { height: 240px; }
+  .big { font-size: 22px; }
+  .twocol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+  .twocol .scroll { max-height: 420px; overflow-y: auto; }
+  @media (max-width: 1100px) { main { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 800px) { .twocol { grid-template-columns: minmax(0, 1fr); } main { grid-template-columns: minmax(0, 1fr); padding: 12px; } header { padding: 12px; gap: 10px; } }
+  #chart { height: 440px; }
+  #t-list td, #t-list th { white-space: nowrap; }
+  .tabs a { cursor: pointer; margin-left: 4px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); }
+  .tabs a.active { color: var(--gold); border-color: var(--gold); }
+</style>
+</head>
+<body>
+<header>
+  <h1>XAU/USD · Dip-Tavan 3 · Kesişme LONG/SHORT</h1>
+  <div><span class="price" id="price">–</span> <span class="muted small" id="candle"></span></div>
+  <div class="muted small" style="margin-left:auto;text-align:right">
+    Veri: <span id="source">–</span> · Son güncelleme: <span id="updated">–</span><br>
+    0,03 lot sanal takip · gerçek işlem açılmaz · her 15 dakikada güncellenir
+  </div>
+</header>
+<div id="error"></div>
+<main>
+  <section class="card wide">
+    <h2><span>Grafik <span class="tabs" id="tabs"></span></span>
+      <span class="muted small">▲ LONG · ▼ SHORT · ● kapanış ($) · kesikli: açık işlemin girişi ve stopu</span></h2>
+    <div id="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Açık işlem</h2>
+    <div id="a-pos"></div>
+  </section>
+
+  <section class="card">
+    <h2>Canlı takip <span class="muted small" id="a-since"></span></h2>
+    <div class="stats" id="a-stats"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Kâr/zarar eğrisi ($) <span class="muted small">canlı takip</span></h2>
+    <div id="a-curve" class="kasa"></div>
+  </section>
+
+  <section class="card wide" id="how">
+    <h2>Çalışma prensibi</h2>
+    <div class="twocol">
+      <div><h3>1. Giriş (kesişme noktası)</h3><div id="h-signal" class="small"></div></div>
+      <div><h3>2. Stoplar</h3><div id="h-stops" class="small"></div></div>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <h2>Son 60 gün (geriye dönük) <span class="muted small" id="r-since"></span></h2>
+    <div class="stats" id="r-stats"></div>
+    <div id="r-curve" class="kasa"></div>
+    <p class="small" id="r-avg"></p>
+    <div class="twocol">
+      <div><h3>Günlük</h3><div class="scroll"><table id="r-days"></table></div></div>
+      <div><h3>Haftalık</h3><div class="scroll"><table id="r-weeks"></table></div></div>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <h2><span>İşlemler <span class="tabs" id="t-tabs"><a data-k="live">Canlı takip</a><a data-k="ref">Son 60 gün</a></span></span>
+      <span class="muted small" id="t-count"></span></h2>
+    <div class="scroll"><table id="t-list"></table></div>
+  </section>
+
+  <p class="muted small wide">Her işlem 0,03 lot (pip başına $3, altında 1 pip = $1 fiyat hareketi). Her işlemden spread için 0,3 pip düşülür;
+  komisyon, swap ve kayma dahil değildir. Stoplar 1 dakikalık mumlarla kontrol edilir. "Son 60 gün" geriye dönük hesaplanmıştır. Yatırım tavsiyesi değildir.</p>
+</main>
+<script src="common.js"></script>
+<script>
+const sgn = n => (n >= 0 ? "+" : "-") + "$" + fmt(Math.abs(n), 2);
+const cls = n => n >= 0 ? "green" : "red";
+const ls = d => d === 1 ? '<span class="badge buy">LONG</span>' : '<span class="badge sell">SHORT</span>';
+const day = t => new Date(t * 1000).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const dmy = k => k.slice(8, 10) + "." + k.slice(5, 7) + "." + k.slice(0, 4);
+const dayName = k => new Date(k + "T12:00:00").toLocaleDateString("tr-TR", { weekday: "short" });
+const weekLabel = k => { const e = new Date(new Date(k + "T12:00:00").getTime() + 6 * 86400000); return dmy(k) + " – " + String(e.getDate()).padStart(2, "0") + "." + String(e.getMonth() + 1).padStart(2, "0"); };
+const P = n => fmt(n, n % 1 ? (n * 10 % 1 ? 2 : 1) : 0);
+const charts = {};
+function curve(id, pts) {
+  if (!charts[id]) {
+    const c = LightweightCharts.createChart($(id), chartOpts({}));
+    charts[id] = c.addBaselineSeries({ baseValue: { type: "price", price: 0 } });
+    charts[id].chart = c;
+  }
+  const m = new Map(); pts.forEach(([t, v]) => m.set(t + tzOffset, v));
+  charts[id].setData([...m].sort((a, b) => a[0] - b[0]).map(([time, value]) => ({ time, value })));
+  charts[id].chart.timeScale().fitContent();
+}
+function statsBlock(a, equity) {
+  const rate = a.closed ? fmt(a.wins / a.closed * 100, 0) + "%" : "–";
+  return `<div><span class="muted small">Net kâr/zarar</span><br><b class="big ${cls(a.usd)}">${sgn(a.usd)}</b></div>
+    ${equity !== undefined ? `<div><span class="muted small">Açık işlem dahil</span><br><b class="${cls(equity)}">${sgn(equity)}</b></div>` : ""}
+    <div><span class="muted small">Pip</span><br><b class="${cls(a.pips)}">${a.pips >= 0 ? "+" : ""}${fmt(a.pips, 1)}</b></div>
+    <div><span class="muted small">İşlem</span><br><b>${a.closed}</b> <span class="muted small">(<span class="green">${a.wins}</span>/<span class="red">${a.losses}</span>)</span></div>
+    <div><span class="muted small">Başarı</span><br><b>${rate}</b></div>
+    <div><span class="muted small">🔒 Kilitli kârla kapanan</span><br><b class="green">${a.locked}</b></div>
+    <div><span class="muted small">🛑 Zarar durdur</span><br><b class="red">${a.stopped}</b></div>
+    <div><span class="muted small">En büyük düşüş</span><br><b class="red">${sgn(a.max_dd)}</b></div>`;
+}
+function periodHtml(ps, label) {
+  if (!ps.length) return '<tr><td class="muted">Henüz kapanan işlem yok.</td></tr>';
+  return `<tr><th>${label === dmy ? "Gün" : "Hafta"}</th><th>İşlem</th><th>Pip</th><th>Kâr/Zarar</th></tr>` +
+    ps.slice().reverse().map(p => `<tr><td>${label(p.start_day)}${label === dmy ? ` <span class="muted small">${dayName(p.start_day)}</span>` : ""}</td>
+      <td>${p.trades} <span class="muted small">(<span class="green">${p.wins}</span>/<span class="red">${p.trades - p.wins}</span>)</span></td>
+      <td>${p.pips >= 0 ? "+" : ""}${fmt(p.pips, 1)}</td><td class="${cls(p.usd)}"><b>${sgn(p.usd)}</b></td></tr>`).join("");
+}
+function avgHtml(f) {
+  if (!f.days.length) return "";
+  const avg = a => a.reduce((s, p) => s + p.usd, 0) / a.length, pos = a => a.filter(p => p.usd > 0).length;
+  const ad = avg(f.days), aw = avg(f.weeks);
+  return `Ortalama: günde <b class="${cls(ad)}">${sgn(ad)}</b> (işlem olan ${f.days.length} günün ${pos(f.days)}'i kârlı) · ` +
+    `haftada <b class="${cls(aw)}">${sgn(aw)}</b> (${f.weeks.length} haftanın ${pos(f.weeks)}'i kârlı)`;
+}
+function howHtml(r) {
+  const tg = p => Math.max(r.trail_min, r.trail_gap - r.trail_step * (p - r.lock));
+  const stopAt = p => Math.max(r.lock, p - tg(p));
+  const money = p => sgn((p - r.spread_pips) * r.usd_per_pip);
+  $("h-signal").innerHTML = `<p>Dip-Tavan ile aynı 6 gösterge (EMA 9/21, Bollinger 20/2, RSI 14, StochRSI tam 0/100, MACD DEMA, Hacim) 15dk, 30dk, 45dk ve 1s grafiklerde izlenir.</p>
+    <p><b>1) Kurulum:</b> Dip-Tavan'ın dip (tavan) koşulu oluşur: 15dk'da StochRSI dahil en az ${r.min_15m}/6 gösterge, üst zaman dilimlerinden en az ikisinde onay.</p>
+    <p><b>2) Kesişme:</b> Kurulumdan sonraki ${r.setup_bars} mum (${r.setup_bars * 15} dk) içinde 15dk mum kapanışı <b>EMA ${r.cross_ema}</b>'u
+    <span class="green">yukarı keserse LONG</span>, <span class="red">aşağı keserse SHORT</span> açılır. Giriş kesişme mumunun kapanış fiyatıdır.</p>
+    <p><b>3) Ters kesişme:</b> Açık işlem varken ters yönde kesişme olursa işlem kapanır ve ters işlem açılır.</p>
+    <p>Her işlem <b>${fmt(r.lot, 2)} lot</b> = pip başına <b>$${fmt(r.usd_per_pip, 0)}</b>.</p>`;
+  const rows = [r.lock, r.lock + 3, r.lock + 5, r.lock + 8, r.lock + 12, r.lock + 20]
+    .map(p => `<tr><td>+${P(p)} pip</td><td>${P(tg(p))} pip</td><td class="green">+${P(stopAt(p))} pip (${money(stopAt(p))})</td></tr>`).join("");
+  $("h-stops").innerHTML = `<p><b>a) Zarar durdur:</b> Zarar <b>${P(r.sl)} pip</b> olunca işlem otomatik kapanır (${money(-r.sl)}).</p>
+    <p><b>b) 7 pip kilit:</b> Kâr <b>+${P(r.lock)} pip</b>'e ulaşınca stop girişin ${P(r.lock)} pip kârlı tarafına taşınır.
+    Bundan sonra ne olursa olsun en az <b>+${P(r.lock)} pip</b> (${money(r.lock)}) kilitlidir.</p>
+    <p><b>c) Kademeli iz süren stop:</b> Stop, ulaşılan en yüksek kârın ${P(r.trail_gap)} pip gerisinden izler; kâr her 1 pip arttıkça mesafe
+    ${fmt(r.trail_step, 2)} pip daralır (en az ${P(r.trail_min)} pip). Stop sadece kâr yönüne ilerler ve +${P(r.lock)}'in altına hiç inmez.</p>
+    <table><tr><th>En yüksek kâr</th><th>Mesafe</th><th>Kilitli kâr</th></tr>${rows}</table>
+    <p class="muted">Stoplar 1 dakikalık mumlarla kontrol edilir; aynı dakikada iki seviyeye de değilirse önce zarar durdur varsayılır.</p>`;
+}
+function tradesHtml(ts, open, emptyMsg) {
+  const rows = [];
+  if (open) rows.push(`<tr><td>${dt(open.t)}</td><td>🟡 <b>AÇIK</b></td><td>${ls(open.dir)}</td><td>${fmt(open.entry)}</td>
+    <td>${fmt(open.pips, 1)}</td><td class="${cls(open.usd)}"><b>${sgn(open.usd)}</b> <span class="muted small">anlık</span></td></tr>`);
+  ts.slice().reverse().forEach(t => {
+    rows.push(`<tr><td>${dt(t.t)}</td><td>${t.usd >= 0 ? "✅" : "❌"} KAPANDI</td><td>${ls(t.dir)}</td>
+      <td>${fmt(t.exit)}<br><span class="muted small">${t.reason}</span></td><td>${t.pips >= 0 ? "+" : ""}${fmt(t.pips, 1)}</td>
+      <td class="${cls(t.usd)}"><b>${sgn(t.usd)}</b></td></tr>`);
+    rows.push(`<tr><td>${dt(t.open_t)}</td><td>${t.dir === 1 ? "🟢" : "🔴"} AÇILDI</td><td>${ls(t.dir)}</td><td>${fmt(t.entry)}</td><td></td><td></td></tr>`);
+  });
+  if (!rows.length) return `<tr><td class="muted">${emptyMsg}</td></tr>`;
+  return "<tr><th>Zaman</th><th>Olay</th><th>Yön</th><th>Fiyat</th><th>Pip</th><th>Kâr/Zarar</th></tr>" + rows.join("");
+}
+function posHtml(p, r) {
+  if (!p) return '<div class="muted">Açık işlem yok. Sıradaki kesişme bekleniyor.</div>';
+  return `<div class="pos">
+    <div><span class="muted small">Yön · lot</span><b>${ls(p.dir)} ${fmt(r.lot, 2)}</b></div>
+    <div><span class="muted small">Giriş · ${dt(p.t)}</span><b>${fmt(p.entry)}</b></div>
+    <div><span class="muted small">${p.lock ? "🔒 Kilitli stop" : "🛑 Zarar durdur"}</span><b class="${p.lock ? "green" : "red"}">${fmt(p.sl)}</b></div>
+    <div><span class="muted small">En yüksek kâr</span><b>+${fmt(p.peak, 1)} pip</b></div>
+    <div><span class="muted small">Anlık kâr/zarar</span><b class="${cls(p.usd)}">${sgn(p.usd)} (${fmt(p.pips, 1)} pip)</b></div>
+  </div>`;
+}
+
+// ---- grafik: zaman dilimi butonları, mumlar Bitget TradFi'den canlı ----
+const TFS = { "1dk": ["1m"], "5dk": ["5m"], "15dk": ["15m"], "1s": ["1h"], "4s": ["4h"] };
+let tf = TFS[localStorage.getItem("dt3Tf")] ? localStorage.getItem("dt3Tf") : "15dk", tlist = localStorage.getItem("dt3List") || "live";
+let cv = null, lastData = null, lastRows = null, lastView = null;
+async function chartRows() { return tradfiRows(lastData.symbol, TFS[tf][0]); }
+function drawChart() {
+  const d = lastData, rows = lastRows;
+  if (!d || !rows || !rows.length) return;
+  if (!cv) {
+    const c = LightweightCharts.createChart($("chart"), chartOpts({}));
+    cv = { c, s: c.addCandlestickSeries({ upColor: "#22c55e", downColor: "#ef4444", wickUpColor: "#22c55e", wickDownColor: "#ef4444", borderVisible: false }), lines: [] };
+  }
+  cv.s.setData(rows.map(x => ({ time: x[0] + tzOffset, open: x[1], high: x[2], low: x[3], close: x[4] })));
+  const first = rows[0][0];
+  const barOf = s => { let lo = 0, hi = rows.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; rows[m][0] <= s ? lo = m : hi = m - 1; } return rows[lo][0] + tzOffset; };
+  const mk = [];
+  const opened = (t, dir) => t - 1 >= first && mk.push({ time: barOf(t - 1), position: dir === 1 ? "belowBar" : "aboveBar",
+    color: dir === 1 ? "#22c55e" : "#ef4444", shape: dir === 1 ? "arrowUp" : "arrowDown", text: dir === 1 ? "LONG" : "SHORT" });
+  d.ref_trades.forEach(t => {
+    opened(t.open_t, t.dir);
+    if (t.t - 1 >= first) mk.push({ time: barOf(t.t - 1), position: t.dir === 1 ? "aboveBar" : "belowBar",
+      color: t.usd >= 0 ? "#22c55e" : "#ef4444", shape: "circle", text: sgn(t.usd) });
+  });
+  const o = d.position || d.ref_open;
+  if (o) opened(o.t, o.dir);
+  if (tf === "4s") mk.forEach(m => m.text = "");
+  cv.s.setMarkers(mk.sort((a, b) => a.time - b.time));
+  cv.lines.forEach(l => cv.s.removePriceLine(l));
+  cv.lines = [];
+  if (d.position) {
+    const add = (price, color, title) => cv.lines.push(cv.s.createPriceLine({ price, color, lineWidth: 1, lineStyle: 2, title }));
+    add(d.position.entry, "#f5c542", "Giriş");
+    add(d.position.sl, d.position.lock ? "#22c55e" : "#ef4444", d.position.lock ? "Kilitli stop" : "Zarar durdur");
+  }
+  if (lastView !== tf) { cv.c.timeScale().setVisibleLogicalRange({ from: rows.length - 150, to: rows.length + 3 }); lastView = tf; }
+}
+function renderTrades() {
+  const d = lastData;
+  if (!d) return;
+  document.querySelectorAll("#t-tabs a").forEach(a => a.classList.toggle("active", a.dataset.k === tlist));
+  const live = tlist === "live", ts = live ? d.history.filter(e => e.kind === "KAPAT") : d.ref_trades;
+  const open = live ? d.position : d.ref_open && Object.assign({}, d.ref_open, livePnl(d.ref_open, d));
+  $("t-count").textContent = `${ts.length} kapanan işlem` + (open ? " · 1 açık" : "");
+  $("t-list").innerHTML = tradesHtml(ts, open, live ? "Henüz işlem yok. Takip başladıktan sonraki ilk kesişme bekleniyor." : "Bu dönemde işlem yok.");
+}
+function livePnl(p, d) {
+  const pips = Math.round(p.dir * (d.price - p.entry) / d.pip_size * 10) / 10;
+  return { pips, usd: Math.round((pips - d.rule.spread_pips) * d.rule.usd_per_pip * 100) / 100 };
+}
+$("tabs").innerHTML = Object.keys(TFS).map(n => `<a data-tf="${n}">${n}</a>`).join("");
+const markTab = () => document.querySelectorAll("#tabs a").forEach(a => a.classList.toggle("active", a.dataset.tf === tf));
+markTab();
+document.querySelectorAll("#tabs a").forEach(a => a.onclick = async () => {
+  tf = a.dataset.tf; localStorage.setItem("dt3Tf", tf); markTab();
+  const want = tf, rows = await chartRows();
+  if (want === tf) { lastRows = rows; drawChart(); }
+});
+document.querySelectorAll("#t-tabs a").forEach(a => a.onclick = () => { tlist = a.dataset.k; localStorage.setItem("dt3List", tlist); renderTrades(); });
+startPage("dip_tavan3", d => {
+  const a = d.account, o = d.position;
+  if (o) Object.assign(o, livePnl(o, d));
+  const equity = a.usd + (o ? o.usd : 0);
+  $("a-since").textContent = "başlangıç " + day(a.start_t);
+  $("a-stats").innerHTML = statsBlock(a, equity);
+  curve("a-curve", a.curve.concat([[d.close_time, equity]]));
+  $("a-pos").innerHTML = posHtml(o, d.rule);
+  const f = d.ref;
+  $("r-since").textContent = day(f.start_t) + " – " + day(f.end_t);
+  $("r-stats").innerHTML = statsBlock(f);
+  curve("r-curve", f.curve);
+  $("r-avg").innerHTML = avgHtml(f);
+  $("r-days").innerHTML = periodHtml(f.days, dmy);
+  $("r-weeks").innerHTML = periodHtml(f.weeks, weekLabel);
+  lastData = d;
+  howHtml(d.rule);
+  renderTrades();
+  drawChart();
+}, async x => {
+  lastData = lastData || x;
+  const want = tf, rows = await chartRows();
+  if (want === tf) lastRows = rows;
+  return { price: rows[rows.length - 1][4] };
+});
+</script>
+</body>
+</html>

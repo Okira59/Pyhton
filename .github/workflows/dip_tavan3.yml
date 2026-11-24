@@ -1,0 +1,42 @@
+name: Dip-Tavan 3 Surekli Takip
+
+# Kesintisiz çalışır: her 20 sn'de veri yenilenir, 15dk kapanışında kesişme aranır,
+# stoplar her dakika işlenir. ~5,7 saatte bir kendini yeniden başlatır; düşerse
+# "Altin Dip-Tavan Botu" (15 dk'da bir) yeniden başlatır.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: dip-tavan3
+  cancel-in-progress: false
+
+jobs:
+  takip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Sürekli takip
+        env:
+          LOOP_SECONDS: "20"
+          LOOP_MINUTES: "340"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898332+github-actions[bot]@users.noreply.github.com"
+          python -u dip_tavan3.py --loop
+      - name: Yeniden başlat
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run dip_tavan3.yml --ref main

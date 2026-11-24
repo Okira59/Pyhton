@@ -33,7 +33,8 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
                 if (u.toString().startsWith(PANEL)) return false;
-                startActivity(new Intent(Intent.ACTION_VIEW, u));
+                // Dip-Tavan 3: uygulamadan başka hiçbir panel açılmaz
+                if (!"dip3".equals(BuildConfig.KIND)) startActivity(new Intent(Intent.ACTION_VIEW, u));
                 return true;
             }
 

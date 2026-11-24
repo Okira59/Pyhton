@@ -66,14 +66,15 @@ public class SignalJob extends JobService {
             if (t > max) max = t;
             if (last >= 0 && t > last) notify(c, (int) t + i, e);
         }
-        prefs.edit().putLong("last_t", max).apply();  // ilk çalışmada eski kayıtlar için bildirim gelmez
+        prefs.edit().putLong("last_t", Math.max(max, 0)).apply();  // ilk çalışmada eski kayıtlar için bildirim gelmez; boş geçmiş de "görüldü" sayılır
     }
 
     static void notify(Context c, int id, JSONObject e) throws Exception {
         boolean buy = e.getInt("dir") == 1;
         boolean fut = "futures".equals(BuildConfig.KIND);
         String sym = fut ? e.getString("sym").replace("USDT", "") : "XAU/USD";
-        String side = fut ? (buy ? "LONG" : "SHORT") : (buy ? "AL" : "SAT");
+        boolean longShort = fut || "dip3".equals(BuildConfig.KIND);
+        String side = longShort ? (buy ? "LONG" : "SHORT") : (buy ? "AL" : "SAT");
         int dp = e.optInt("dp", 2);
         String title, text;
         if ("SINYAL".equals(e.getString("kind"))) {
@@ -83,7 +84,8 @@ public class SignalJob extends JobService {
         } else {
             double entry = e.getDouble("entry"), exit = e.getDouble("exit");
             // futures: $20 teminatlı işlemin $ sonucu; altın: 1 pip = 1 $
-            double pnl = fut ? e.optDouble("usd", e.getDouble("pct") * 0.2) : (buy ? 1 : -1) * (exit - entry);
+            double pnl = e.has("usd") ? e.getDouble("usd")
+                    : fut ? e.getDouble("pct") * 0.2 : (buy ? 1 : -1) * (exit - entry);
             title = (pnl >= 0 ? "✅" : "❌") + " İŞLEM KAPANDI – " + sym + " " + side;
             text = fmt(entry, dp) + " → " + fmt(exit, dp) + String.format(Locale.US, "  (%+.2f$)  ", pnl)
                     + e.optString("reason");

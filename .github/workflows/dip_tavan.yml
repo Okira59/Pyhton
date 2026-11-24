@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: dip-tavan
@@ -38,6 +39,12 @@ jobs:
         run: python dip_tavan.py --notify ${{ inputs.test && '--test' || '' }}
       - name: Dip-Tavan 2 sanal hesap takibi
         run: python dip_tavan2.py
+      - name: Dip-Tavan 3 sürekli takip çalışıyor mu? (değilse başlat)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n=$(gh run list -w dip_tavan3.yml --json status -q '[.[] | select(.status != "completed")] | length')
+          [ "$n" = "0" ] && gh workflow run dip_tavan3.yml --ref main || echo "Dip-Tavan 3 çalışıyor ($n)"
       - name: Durumu kaydet
         run: |
           if [ -n "$(git status --porcelain dip_tavan_state.json docs/data/dip_tavan.json dip_tavan2_state.json docs/data/dip_tavan2.json)" ]; then

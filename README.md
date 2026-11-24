@@ -74,6 +74,17 @@ python dip_tavan.py --history  # son 60 günün sinyalleri + kâr/zarar özeti
 ```
 GitHub Actions: `.github/workflows/dip_tavan.yml`, secret `TELEGRAM_BOT_TOKEN_15` (chat ID: `TELEGRAM_CHAT_ID_15`, yoksa `TELEGRAM_CHAT_ID`).
 
+## Üçüncü bot: Dip-Tavan 3 (dip_tavan3.py)
+Dip-Tavan ile aynı göstergeler. Dip (tavan) koşulu son 6 adet 15dk mum içinde oluştuysa, 15dk kapanış EMA9'u yukarı (aşağı)
+kestiği anda **LONG (SHORT)** açılır; ters kesişme işlemi çevirir. Her işlem **0,03 lot** (pip başına $3).
+Çıkış (1dk mumlarla): **-5 pip** zarar durdur; kâr **+7 pip** olunca stop +7'ye kilitlenir (ne olursa olsun +7 korunur),
+sonra kademeli iz süren stop (zirvenin 5 pip gerisi, kâr her 1 pip arttıkça 0,25 pip daralır, en az 2). Sanal takiptir,
+gerçek işlem açmaz, Telegram'a yazmaz.
+Sürekli çalışır (`dip_tavan3.yml`, `python dip_tavan3.py --loop`): 20 sn'de bir veri yenilenir, 15dk kapanır kapanmaz
+kesişme aranır, stoplar her kapanan 1dk mumda işlenir; olay olunca hemen kaydedilir. ~5,7 saatte bir kendini yeniden
+başlatır, durursa 15 dk'lık Dip-Tavan iş akışı yeniden başlatır. Panel: https://okira59.github.io/Pyhton/dip-tavan3.html · APK: `diptavan3` flavor.
+Ayarlar: `LOT`, `SL_PIPS`, `LOCK_PIPS`, `TRAIL_GAP`, `TRAIL_STEP`, `TRAIL_MIN`, `SPREAD_PIPS`.
+
 ## Web paneli
 
 İki botun durumu (fiyat grafiği, gösterge tabloları, açık işlem, son 60 günün sinyalleri ve kâr/zarar yüzdeleri)

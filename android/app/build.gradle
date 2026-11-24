@@ -26,6 +26,17 @@ android {
             buildConfigField "String", "DATA", "\"${RAW}dip_tavan.json\""
             buildConfigField "String", "HIDE", '"header nav"'
         }
+        diptavan3 {
+            dimension "bot"
+            applicationId "com.okira.diptavan3"
+            versionCode 2
+            versionName "1.1"
+            resValue "string", "app_name", "Dip-Tavan 3"
+            buildConfigField "String", "KIND", '"dip3"'
+            buildConfigField "String", "PANEL", "\"${WEB}dip-tavan3.html\""
+            buildConfigField "String", "DATA", "\"${RAW}dip_tavan3.json\""
+            buildConfigField "String", "HIDE", '"header nav, nav, a[href]"'
+        }
         altin {
             dimension "bot"
             applicationId "com.okira.altinsinyal"
