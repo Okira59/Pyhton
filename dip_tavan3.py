@@ -24,7 +24,7 @@ from indicators import ema
 LOT = float(os.getenv("LOT", "0.03"))
 OZ_PER_LOT = 100                     # 1 lot XAUUSD = 100 ons → 0.03 lot = pip başına $3
 PIP_SIZE = dt.PIP_SIZE               # altında 1 pip = 1 $
-SL_PIPS = float(os.getenv("SL_PIPS", "5"))
+SL_PIPS = float(os.getenv("SL_PIPS", "3"))
 LOCK_PIPS = float(os.getenv("LOCK_PIPS", "7"))
 TRAIL_GAP = float(os.getenv("TRAIL_GAP", "5"))
 TRAIL_STEP = float(os.getenv("TRAIL_STEP", "0.25"))
@@ -232,9 +232,9 @@ def push() -> bool:
     return False
 
 
-def loop(every: float, minutes: float, heartbeat: float = 120):
+def loop(every: float, minutes: float, heartbeat: float = 0):
     """Sürekli takip: 15dk kapanır kapanmaz kesişme aranır, stoplar her dakika işlenir;
-    olay/stop değişince hemen, değilse `heartbeat` saniyede bir kaydedilir."""
+    her turda değişen durum anında kaydedilir (`heartbeat` > 0 ise olay yokken o kadar saniyede bir)."""
     end = time.time() + minutes * 60
     base = dt.fetch()
     m1 = _closed_only(_download("1m", "60d"), TF_1M)
