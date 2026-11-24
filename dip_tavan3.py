@@ -210,7 +210,7 @@ def run(base=None, m1=None):
     })
     print(f"Dip-Tavan 3: canlı {acc['closed']} işlem {acc['usd']:+.2f}$, açık: {bool(live_pos)}; "
           f"son 60 gün {ref['closed']} işlem {ref['usd']:+.2f}$ (0.03 lot)")
-    return len(kept), live_pos and (live_pos["t"], live_pos["sl"])
+    return len(kept), live_pos and (live_pos["t"], live_pos["sl"]), round(price, 2), close_t
 
 
 FILES = [STATE_FILE, "docs/data/dip_tavan3.json"]
@@ -235,7 +235,7 @@ def push() -> bool:
 
 def loop(every: float, minutes: float, heartbeat: float = 0):
     """Sürekli takip: 15dk kapanır kapanmaz kesişme aranır, stoplar her dakika işlenir;
-    her turda değişen durum anında kaydedilir (`heartbeat` > 0 ise olay yokken o kadar saniyede bir)."""
+    fiyat/işlem/stop değişen her turda anında kaydedilir (`heartbeat` > 0 ise değişiklik yokken de o kadar saniyede bir)."""
     end = time.time() + minutes * 60
     base = dt.fetch()
     m1 = _closed_only(_download("1m", "60d"), TF_1M)
@@ -248,7 +248,7 @@ def loop(every: float, minutes: float, heartbeat: float = 0):
             tail = _closed_only(_download("1m", "1d"), TF_1M)
             m1 = pd.concat([m1, tail[tail.index > m1.index[-1]]])
             k = run(base, m1)
-            if (k != key or time.time() - pushed >= heartbeat) and push():
+            if (k != key or (heartbeat and time.time() - pushed >= heartbeat)) and push():
                 key, pushed = k, time.time()
         except Exception as ex:  # ağ/veri hatasında döngü durmasın
             print(f"Dip-Tavan 3 hata: {ex}", flush=True)
