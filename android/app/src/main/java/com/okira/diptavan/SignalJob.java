@@ -66,7 +66,7 @@ public class SignalJob extends JobService {
             if (t > max) max = t;
             if (last >= 0 && t > last) notify(c, (int) t + i, e);
         }
-        prefs.edit().putLong("last_t", max).apply();  // ilk çalışmada eski kayıtlar için bildirim gelmez
+        prefs.edit().putLong("last_t", Math.max(max, 0)).apply();  // ilk çalışmada eski kayıtlar için bildirim gelmez; boş geçmiş de "görüldü" sayılır
     }
 
     static void notify(Context c, int id, JSONObject e) throws Exception {
