@@ -167,7 +167,7 @@ def run(base=None, m1=None):
     last = base.iloc[-1]
     close_t = dashboard.ts(last["close_time"])
     # 15dk verisi gecikirse dakikalar son kapanan 15dk mumunun ötesinde işlenmez (kesişme kaçmasın)
-    events, pos = simulate(base, signals(base), m1[m1.index < base.index[-1] + TF_15M])
+    events, pos = simulate(base, signals(base), m1[m1.index < base.index[-1]])
 
     try:
         state = json.load(open(STATE_FILE, encoding="utf-8"))
