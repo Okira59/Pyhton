@@ -116,6 +116,7 @@ void CloseAll(string why)
    {
       ulong t = PositionGetTicket(i);
       if(t == 0 || PositionGetInteger(POSITION_MAGIC) != (long)InpMagic) continue;
+      trade.SetTypeFillingBySymbol(PositionGetString(POSITION_SYMBOL));
       if(!trade.PositionClose(t)) PrintFormat("Kapatılamadı #%I64u: %s", t, trade.ResultRetcodeDescription());
    }
    Print("Tüm işlemler kapatıldı: ", why);
