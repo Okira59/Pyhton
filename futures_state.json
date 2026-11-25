@@ -23,28 +23,6 @@
    "margin": 40.0,
    "time": "2026-11-25T14:30:00+00:00"
   },
-  "ATOMUSDT": {
-   "dir": -1,
-   "entry": 1.206,
-   "act": 1.18188,
-   "sl": 1.22409,
-   "peak": 1.2007,
-   "trail": false,
-   "dp": 4,
-   "margin": 40.0,
-   "time": "2026-11-25T14:35:00+00:00"
-  },
-  "HBARUSDT": {
-   "dir": -1,
-   "entry": 0.04862,
-   "act": 0.0476476,
-   "sl": 0.04934929999999999,
-   "peak": 0.04856,
-   "trail": false,
-   "dp": 5,
-   "margin": 40.0,
-   "time": "2026-11-25T14:45:00+00:00"
-  },
   "AGLDUSDT": {
    "dir": -1,
    "entry": 0.1274,
@@ -611,26 +589,6 @@
   "LAYERUSDT": "2026-11-25T14:55:00+00:00"
  },
  "history": [
-  {
-   "t": 1795260000,
-   "kind": "SINYAL",
-   "sym": "AKEUSDT",
-   "dp": 7,
-   "dir": -1,
-   "price": 0.0049679
-  },
-  {
-   "t": 1795260763,
-   "kind": "KAPAT",
-   "sym": "AKEUSDT",
-   "dp": 7,
-   "dir": -1,
-   "entry": 0.0049679,
-   "exit": 0.0050424185,
-   "pct": -15.0,
-   "reason": "-%15 zarar durdur \u00b7 anl\u0131k fiyat 0.0050509",
-   "usd": -6.0
-  },
   {
    "t": 1795261068,
    "kind": "KAPAT",
@@ -3602,6 +3560,30 @@
    "pct": 7.71,
    "reason": "\u0130z s\u00fcren stop (zirve k\u00e2r +%21.8)",
    "usd": 3.08
+  },
+  {
+   "t": 1795618758,
+   "kind": "KAPAT",
+   "sym": "ATOMUSDT",
+   "dp": 4,
+   "dir": -1,
+   "entry": 1.206,
+   "exit": 1.22409,
+   "pct": -15.0,
+   "reason": "-%15 zarar durdur \u00b7 anl\u0131k fiyat 1.2259",
+   "usd": -6.0
+  },
+  {
+   "t": 1795618758,
+   "kind": "KAPAT",
+   "sym": "HBARUSDT",
+   "dp": 5,
+   "dir": -1,
+   "entry": 0.04862,
+   "exit": 0.04934929999999999,
+   "pct": -15.0,
+   "reason": "-%15 zarar durdur \u00b7 anl\u0131k fiyat 0.04943",
+   "usd": -6.0
   }
  ],
  "last_status": "2026-11-16T19:00:00+00:00",
@@ -3613,10 +3595,10 @@
    "limit": 100,
    "limit_long": 3,
    "limit_short": 97,
-   "closed": 30,
+   "closed": 32,
    "wins": 19,
-   "losses": 11,
-   "usd": 80.3,
+   "losses": 13,
+   "usd": 68.3,
    "trail": 18
   }
  },
@@ -3627,20 +3609,6 @@
    "sl": 0.0031211249999999998,
    "size": "130081",
    "oid": "1509493364607303681"
-  },
-  "ATOMUSDT": {
-   "time": "2026-11-25T14:35:00+00:00",
-   "dir": -1,
-   "sl": 1.22409,
-   "size": "331",
-   "oid": "1509494632671232002"
-  },
-  "HBARUSDT": {
-   "time": "2026-11-25T14:45:00+00:00",
-   "dir": -1,
-   "sl": 0.04934929999999999,
-   "size": "8227",
-   "oid": "1509497093431640066"
   },
   "AGLDUSDT": {
    "time": "2026-11-25T14:50:00+00:00",
