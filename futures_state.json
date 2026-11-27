@@ -16,13 +16,17 @@
    "dir": 1,
    "entry": 0.6726,
    "act": 0.686052,
-   "sl": 0.6809850000000001,
-   "peak": 0.6894,
+   "sl": 0.6821850000000002,
+   "peak": 0.6902,
    "trail": true,
    "dp": 4,
    "margin": 40.0,
    "time": "2026-11-26T19:15:00+00:00",
-   "ex_skip": "40762 The order amount exceeds the balance"
+   "ex_skip": "40762 The order amount exceeds the balance",
+   "live": {
+    "bar": 1795767300,
+    "sl0": 0.6809850000000001
+   }
   },
   "APTUSDT": {
    "dir": 1,
@@ -88,7 +92,7 @@
    "entry": 0.1521,
    "act": 0.155142,
    "sl": 0.14981850000000002,
-   "peak": 0.1535,
+   "peak": 0.1537,
    "trail": false,
    "dp": 4,
    "margin": 40.0,
